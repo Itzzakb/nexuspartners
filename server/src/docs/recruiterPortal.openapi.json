@@ -1,0 +1,835 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nexus Partners — Recruiter Portal API",
+    "description": "REST API for the Nexus Partners recruiter mobile/web app.\n\n## Authentication\n1. Call `POST /auth/login` with recruiter username and password.\n2. Store the returned `accessToken`.\n3. Send `Authorization: Bearer <accessToken>` on all protected endpoints.\n\nRecruiter tokens are separate from admin portal tokens (`type: recruiter` in JWT payload).\n\n## Typical flow\n1. Login → get token\n2. `GET /students` → list assigned students\n3. `GET /jobs?studentPhone=...` → matched jobs for selected student\n4. `GET /jobs/{id}?studentPhone=...` → job detail + applicant context\n5. `POST /jobs/{id}/apply` or `POST /jobs/{id}/drop` → record action\n\n## Notes\n- `studentPhone` is the student's phone number (primary identifier).\n- Job list excludes jobs previously **dropped** for that student.\n- Job matching uses the student's role keywords against `jobTitle`.\n- `scrapedFrom` / `scrapedTo` filter on job `createdAt` (YYYY-MM-DD).\n- Pagination: `page` is zero-based; default `limit` is 20 (max 50).\n- **Fix Resume** uses Gemini to tailor the student resume JSON to the job, then saves via the Nexus Partners student API.\n- **Download ATS Resume** builds a job-specific ATS PDF via the Nexus Partners resume build API.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Nexus Partners",
+      "url": "https://nexuspartners.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/recruiter",
+      "description": "Recruiter API base path (prepend your server host, e.g. https://api.nexuspartners.com)"
+    }
+  ],
+  "tags": [
+    { "name": "Auth", "description": "Recruiter login and session" },
+    { "name": "Students", "description": "Assigned students, profiles, notes, tickets" },
+    { "name": "Jobs", "description": "Scraped jobs matched to a student" },
+    { "name": "Resume", "description": "Tailor and download ATS resumes" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "RecruiterBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT from POST /auth/login. Expires per RECRUITER_JWT_EXPIRES_IN (default 12h)."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "example": "Invalid username or password" }
+        },
+        "required": ["error"]
+      },
+      "RecruiterAccount": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "674a1b2c3d4e5f6789012345" },
+          "username": { "type": "string", "example": "recruiter" },
+          "name": { "type": "string", "example": "Jane Recruiter" },
+          "email": { "type": "string", "format": "email", "example": "jane@nexuspartners.com" },
+          "phone": { "type": "string", "example": "" },
+          "companyId": { "type": "string" },
+          "isActive": { "type": "boolean", "example": true },
+          "lastLoginAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "RecruiterCompany": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string", "example": "nexuspartners.com" },
+          "slug": { "type": "string", "example": "nexuspartners" },
+          "logoUrl": { "type": "string", "nullable": true },
+          "appTitle": { "type": "string", "example": "Nexus Partners Admin" },
+          "primaryColor": { "type": "string", "example": "#3e6ae1" },
+          "secondaryColor": { "type": "string", "example": "#7c3aed" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "example": "recruiter" },
+          "password": { "type": "string", "format": "password", "example": "********" },
+          "companySlug": {
+            "type": "string",
+            "description": "Optional. Defaults to platform admin company when omitted.",
+            "example": "nexuspartners"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "recruiter": { "$ref": "#/components/schemas/RecruiterAccount" },
+          "company": { "$ref": "#/components/schemas/RecruiterCompany" },
+          "accessToken": { "type": "string", "description": "JWT bearer token" }
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "recruiter": { "$ref": "#/components/schemas/RecruiterAccount" },
+          "company": { "$ref": "#/components/schemas/RecruiterCompany" }
+        }
+      },
+      "RecruiterStudent": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string", "example": "9876543210" },
+          "name": { "type": "string", "example": "John Doe" },
+          "email": { "type": "string", "example": "john@example.com" },
+          "role": { "type": "string", "example": "Software Engineer" },
+          "location": { "type": "string", "example": "Hyderabad" },
+          "isActive": { "type": "boolean", "example": true },
+          "companyId": { "type": "string" }
+        }
+      },
+      "StudentListResponse": {
+        "type": "object",
+        "properties": {
+          "students": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RecruiterStudent" }
+          },
+          "total": { "type": "integer", "example": 12 }
+        }
+      },
+      "StudentActivity": {
+        "type": "object",
+        "properties": {
+          "today": { "type": "integer", "description": "Applications recorded today", "example": 2 },
+          "week": { "type": "integer", "description": "Applications in last 7 days", "example": 8 },
+          "month": { "type": "integer", "description": "Applications in last 30 days", "example": 24 }
+        }
+      },
+      "StudentTicketRef": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ticketNumber": { "type": "string", "example": "TKT-2026-001" },
+          "candidateName": { "type": "string" },
+          "currentStage": { "type": "string", "example": "resume" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "StudentDetail": {
+        "type": "object",
+        "properties": {
+          "phone": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "role": { "type": "string" },
+          "location": { "type": "string" },
+          "isActive": { "type": "boolean" },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Raw student profile from Nexus Partners student API"
+          },
+          "notes": { "type": "string", "description": "Recruiter notes for this student" },
+          "companyId": { "type": "string" },
+          "companyLabel": { "type": "string" },
+          "subscription": { "type": "object", "nullable": true, "additionalProperties": true },
+          "payments": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "tickets": { "type": "array", "items": { "$ref": "#/components/schemas/StudentTicketRef" } },
+          "activity": { "$ref": "#/components/schemas/StudentActivity" }
+        }
+      },
+      "StudentDetailResponse": {
+        "type": "object",
+        "properties": {
+          "student": { "$ref": "#/components/schemas/StudentDetail" }
+        }
+      },
+      "UpdateNotesRequest": {
+        "type": "object",
+        "properties": {
+          "notes": { "type": "string", "example": "Strong React background. Prefer remote roles." }
+        }
+      },
+      "UpdateNotesResponse": {
+        "type": "object",
+        "properties": {
+          "notes": { "type": "string" }
+        }
+      },
+      "StudentTicketsResponse": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StudentTicketRef" }
+          }
+        }
+      },
+      "StudentJobAction": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "status": { "type": "string", "enum": ["saved", "applied", "dropped"] },
+          "appliedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "droppedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "resumeFixedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "atsResumeUrl": { "type": "string", "format": "uri", "nullable": true }
+        }
+      },
+      "RecruiterResumeTemplate": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "isDefault": { "type": "boolean" }
+        }
+      },
+      "FixResumeResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "resume": { "type": "object", "additionalProperties": true },
+          "source": { "type": "string", "enum": ["gemini", "mock"] },
+          "mock": { "type": "boolean" },
+          "action": {
+            "type": "object",
+            "properties": {
+              "resumeFixedAt": { "type": "string", "format": "date-time", "nullable": true },
+              "status": { "type": "string" }
+            }
+          }
+        }
+      },
+      "AtsDownloadResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "downloadUrl": { "type": "string", "format": "uri" },
+          "mock": { "type": "boolean" },
+          "result": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "ResumeTemplateListResponse": {
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RecruiterResumeTemplate" }
+          }
+        }
+      },
+      "StudentPhoneTemplateBody": {
+        "type": "object",
+        "required": ["studentPhone"],
+        "properties": {
+          "studentPhone": { "type": "string" },
+          "templateId": { "type": "string", "description": "Optional ATS template id" }
+        }
+      },
+      "ScrapedJob": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "theirstackJobId": { "type": "integer", "nullable": true },
+          "source": { "type": "string", "enum": ["theirstack", "manual"] },
+          "searchProfileId": { "type": "string", "nullable": true },
+          "companyId": { "type": "string" },
+          "jobTitle": { "type": "string", "example": "Senior Software Engineer" },
+          "description": { "type": "string" },
+          "companyName": { "type": "string", "example": "Acme Corp" },
+          "companyDomain": { "type": "string" },
+          "location": { "type": "string", "example": "Remote, US" },
+          "countryCode": { "type": "string", "example": "US" },
+          "remote": { "type": "boolean" },
+          "hybrid": { "type": "boolean" },
+          "seniority": { "type": "string" },
+          "technologySlugs": { "type": "array", "items": { "type": "string" } },
+          "salaryMinUsd": { "type": "number", "nullable": true },
+          "salaryMaxUsd": { "type": "number", "nullable": true },
+          "datePosted": { "type": "string", "format": "date-time", "nullable": true },
+          "discoveredAt": { "type": "string", "format": "date-time", "nullable": true },
+          "applyUrl": { "type": "string", "format": "uri" },
+          "finalUrl": { "type": "string", "format": "uri" },
+          "sourceUrl": { "type": "string", "format": "uri" },
+          "urlDomain": { "type": "string", "example": "linkedin.com" },
+          "notes": { "type": "string" },
+          "status": { "type": "string", "enum": ["open", "applied", "closed", "archived"] },
+          "lastSyncedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "verified": { "type": "boolean", "description": "Always true in recruiter responses" },
+          "studentAction": { "$ref": "#/components/schemas/StudentJobAction" }
+        }
+      },
+      "JobListResponse": {
+        "type": "object",
+        "properties": {
+          "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/ScrapedJob" } },
+          "total": { "type": "integer", "example": 142 },
+          "page": { "type": "integer", "example": 0 },
+          "limit": { "type": "integer", "example": 20 }
+        }
+      },
+      "JobDetailResponse": {
+        "type": "object",
+        "properties": {
+          "job": { "$ref": "#/components/schemas/ScrapedJob" },
+          "applicant": { "$ref": "#/components/schemas/StudentDetail" }
+        }
+      },
+      "StudentPhoneBody": {
+        "type": "object",
+        "required": ["studentPhone"],
+        "properties": {
+          "studentPhone": { "type": "string", "example": "9876543210" }
+        }
+      },
+      "DropJobResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "action": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["dropped"] },
+              "droppedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "ApplyJobResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "applyUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "External apply URL — open in browser"
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["applied"] },
+              "appliedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Recruiter login",
+        "description": "Authenticate with username and password. Returns JWT access token.",
+        "operationId": "recruiterLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "400": { "description": "Missing fields or company not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Invalid credentials", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Account inactive", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Current recruiter session",
+        "operationId": "recruiterMe",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Current recruiter and company",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MeResponse" }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid token", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/students": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "List assigned students",
+        "description": "Returns students assigned to the logged-in recruiter (Nexus Partners student API).",
+        "operationId": "listStudents",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search by name, phone, email, or role",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StudentListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/students/{phone}": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "Get student detail",
+        "description": "Full student profile including notes, tickets, payments, subscription, and activity counts.",
+        "operationId": "getStudent",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "description": "Student phone number",
+            "schema": { "type": "string", "example": "9876543210" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StudentDetailResponse" }
+              }
+            }
+          },
+          "403": { "description": "Student not assigned to recruiter", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/students/{phone}/activity": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "Get student application activity",
+        "description": "Counts of jobs marked as applied for this student (today / week / month).",
+        "operationId": "getStudentActivity",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activity counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "activity": { "$ref": "#/components/schemas/StudentActivity" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/students/{phone}/notes": {
+      "patch": {
+        "tags": ["Students"],
+        "summary": "Update recruiter notes",
+        "operationId": "updateStudentNotes",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateNotesRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notes updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UpdateNotesResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/students/{phone}/tickets": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "List student tickets",
+        "operationId": "listStudentTickets",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StudentTicketsResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/jobs": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "List jobs for a student",
+        "description": "Returns scraped open jobs matched to the student's role. Excludes dropped jobs.",
+        "operationId": "listJobs",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "studentPhone",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "example": "9876543210" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Zero-based page index",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 50)",
+            "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 50 }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search job title, company, or location",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "scrapedFrom",
+            "in": "query",
+            "description": "Filter jobs scraped on or after this date (YYYY-MM-DD)",
+            "schema": { "type": "string", "format": "date", "example": "2026-07-01" }
+          },
+          {
+            "name": "scrapedTo",
+            "in": "query",
+            "description": "Filter jobs scraped on or before this date (YYYY-MM-DD)",
+            "schema": { "type": "string", "format": "date", "example": "2026-07-07" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated job list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobListResponse" }
+              }
+            }
+          },
+          "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Student not assigned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/jobs/{id}": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "Get job detail",
+        "description": "Job details plus applicant (student) context for the given studentPhone.",
+        "operationId": "getJob",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Scraped job MongoDB id",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "studentPhone",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job and applicant",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobDetailResponse" }
+              }
+            }
+          },
+          "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Job not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/jobs/{id}/drop": {
+      "post": {
+        "tags": ["Jobs"],
+        "summary": "Drop job for student",
+        "description": "Marks the job as dropped for this student. Dropped jobs are excluded from future job lists.",
+        "operationId": "dropJob",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StudentPhoneBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job dropped",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DropJobResponse" }
+              }
+            }
+          },
+          "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Job not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/jobs/{id}/apply": {
+      "post": {
+        "tags": ["Jobs"],
+        "summary": "Apply to job for student",
+        "description": "Records application for this student and returns the Nexus Partners apply URL to open in a browser.",
+        "operationId": "applyJob",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StudentPhoneBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Application recorded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApplyJobResponse" }
+              }
+            }
+          },
+          "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Job not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/students/{phone}/resume/download": {
+      "get": {
+        "tags": ["Resume"],
+        "summary": "Download student resume (general)",
+        "operationId": "downloadStudentResume",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          { "name": "phone", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "templateId", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Download URL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AtsDownloadResponse" }
+              }
+            }
+          },
+          "403": { "description": "Student not assigned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/resume-templates": {
+      "get": {
+        "tags": ["Resume"],
+        "summary": "List ATS resume templates",
+        "operationId": "listResumeTemplates",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Template list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResumeTemplateListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/jobs/{id}/fix-resume": {
+      "post": {
+        "tags": ["Resume"],
+        "summary": "Fix resume for job",
+        "description": "Uses Gemini to tailor the student's resume JSON to this job, saves it via the Nexus Partners student API, and records resumeFixedAt on the student-job action.",
+        "operationId": "fixResume",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StudentPhoneBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resume tailored",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FixResumeResponse" }
+              }
+            }
+          },
+          "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Student not assigned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Job not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/jobs/{id}/download-ats-resume": {
+      "post": {
+        "tags": ["Resume"],
+        "summary": "Download ATS resume for job",
+        "description": "Builds a job-specific ATS resume PDF via the Nexus Partners resume build API. Optionally pass templateId.",
+        "operationId": "downloadAtsResume",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StudentPhoneTemplateBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ATS download URL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AtsDownloadResponse" }
+              }
+            }
+          },
+          "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Student not assigned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Job not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    }
+  }
+}

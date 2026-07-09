@@ -1,0 +1,65 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply min-h-screen bg-muted text-body font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  strong,
+  b {
+    @apply text-heading font-semibold;
+  }
+}
+
+@layer components {
+  .np-card {
+    @apply rounded-card border border-border bg-surface shadow-card;
+  }
+
+  .np-input {
+    @apply w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-heading outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20;
+  }
+
+  .np-btn-primary {
+    @apply inline-flex items-center justify-center rounded-pill bg-primary px-6 py-2.5 text-sm font-medium text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .np-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-pill border border-border bg-surface px-6 py-2.5 text-sm font-medium text-heading transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .np-btn-accent {
+    @apply inline-flex items-center justify-center rounded-pill bg-accent px-6 py-2.5 text-sm font-medium text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .np-page-title {
+    @apply text-2xl font-semibold text-heading md:text-3xl;
+  }
+
+  .np-table-wrap {
+    @apply overflow-x-auto rounded-card border border-border bg-surface;
+  }
+
+  .np-empty {
+    @apply py-16 text-center text-sm text-body;
+  }
+}

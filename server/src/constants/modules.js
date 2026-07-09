@@ -1,0 +1,33 @@
+export const MODULE_KEYS = [
+  'tickets',
+  'interviews',
+  'placements',
+  'teams',
+  'recruiters',
+  'payments',
+  'salaries',
+  'billing',
+  'chat',
+  'users',
+  'students',
+  'ats',
+  'prompts',
+  'job_scrap',
+];
+
+export const DEFAULT_TEMPLATE_MODULES = {
+  tickets: true,
+  interviews: true,
+  placements: false,
+  teams: false,
+  recruiters: false,
+  payments: false,
+  salaries: false,
+  billing: false,
+  chat: true,
+  users: false,
+  students: true,
+  ats: false,
+  prompts: false,
+  job_scrap: false,
+};
