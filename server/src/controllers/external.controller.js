@@ -10,9 +10,17 @@ import {
 } from '../services/nexusStudentApi.service.js';
 import { upsertRecruiterAccount } from '../services/recruiterPortal.service.js';
 
+function extractId(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') return value._id || value.id || null;
+  return value;
+}
+
 async function resolveCompanyForRequest(user, queryCompanyId) {
-  let companyId = user.companyId._id;
-  if (user.isPlatformAdmin && queryCompanyId) companyId = queryCompanyId;
+  let companyId = extractId(user.companyId);
+  const normalizedQuery = extractId(queryCompanyId);
+  if (user.isPlatformAdmin && normalizedQuery) companyId = normalizedQuery;
   const company = await Company.findById(companyId);
   if (!company) throw new Error('Company not found');
   return company;
