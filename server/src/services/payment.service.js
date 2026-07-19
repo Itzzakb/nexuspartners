@@ -87,6 +87,13 @@ export function paymentLinkToJSON(doc) {
     customerContact: o.customerContact,
     paymentType: o.paymentType,
     status: o.status,
+    statusUpdatedAt: o.statusUpdatedAt,
+    lastWebhookEvent: o.lastWebhookEvent,
+    lastPaymentStatus: o.lastPaymentStatus,
+    lastPaymentId: o.lastPaymentId,
+    lastPaymentAttemptAt: o.lastPaymentAttemptAt,
+    failureCode: o.failureCode,
+    failureDescription: o.failureDescription,
     expireBy: o.expireBy,
     notifyEmail: o.notifyEmail,
     notifySms: o.notifySms,
@@ -249,6 +256,9 @@ export async function recordWebhookEvent(eventId, data = {}) {
       razorpayPaymentId: data.razorpayPaymentId || '',
       razorpayLinkId: data.razorpayLinkId || '',
       eventType: data.eventType || '',
+      failureCode: data.failureCode || '',
+      failureDescription: data.failureDescription || '',
+      eventOccurredAt: data.eventOccurredAt || null,
     });
     return true;
   } catch (err) {

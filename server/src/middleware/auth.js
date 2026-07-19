@@ -7,7 +7,7 @@ export function signAccessToken(user) {
     {
       sub: user._id.toString(),
       email: user.email,
-      companyId: user.companyId.toString(),
+      companyId: (user.companyId?._id ?? user.companyId).toString(),
       role: user.role,
       isCompanyAdmin: user.isCompanyAdmin,
       isPlatformAdmin: user.isPlatformAdmin,

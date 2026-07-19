@@ -202,6 +202,15 @@ export default function PaymentLinks() {
                     {link.amountFormatted} · {link.customerContact || link.customerEmail}
                   </p>
                   <p className="text-xs text-body">{link.description}</p>
+                  {link.lastPaymentStatus === 'failed' && (
+                    <p className="mt-1 text-xs text-red-700">
+                      Latest payment attempt failed
+                      {link.failureDescription ? `: ${link.failureDescription}` : ''}
+                      {link.lastPaymentAttemptAt
+                        ? ` · ${new Date(link.lastPaymentAttemptAt).toLocaleString()}`
+                        : ''}
+                    </p>
+                  )}
                   {link.ticketId && (
                     <Link to={`/ticket/${link.ticketId}`} className="mt-1 block text-xs text-primary">
                       View auto-created ticket

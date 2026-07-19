@@ -42,6 +42,13 @@ export interface PaymentLink {
   customerContact: string;
   paymentType: PaymentType;
   status: LinkStatus;
+  statusUpdatedAt: string | null;
+  lastWebhookEvent: string;
+  lastPaymentStatus: '' | 'failed' | 'captured';
+  lastPaymentId: string;
+  lastPaymentAttemptAt: string | null;
+  failureCode: string;
+  failureDescription: string;
   expireBy: string | null;
   notifyEmail: boolean;
   notifySms: boolean;

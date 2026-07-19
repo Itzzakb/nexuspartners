@@ -6,6 +6,9 @@ const paymentWebhookEventSchema = new mongoose.Schema(
     razorpayPaymentId: { type: String, default: '' },
     razorpayLinkId: { type: String, default: '' },
     eventType: { type: String, default: '' },
+    failureCode: { type: String, default: '' },
+    failureDescription: { type: String, default: '' },
+    eventOccurredAt: { type: Date, default: null },
     processed: { type: Boolean, default: true },
   },
   { timestamps: true }

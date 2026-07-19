@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 const LINK_STATUSES = ['created', 'paid', 'expired', 'cancelled', 'partially_paid'];
+const PAYMENT_ATTEMPT_STATUSES = ['', 'failed', 'captured'];
 
 const razorpayPaymentLinkSchema = new mongoose.Schema(
   {
@@ -15,6 +16,13 @@ const razorpayPaymentLinkSchema = new mongoose.Schema(
     customerContact: { type: String, default: '' },
     paymentType: { type: String, enum: ['new', 'renewal', 'other'], default: 'other' },
     status: { type: String, enum: LINK_STATUSES, default: 'created' },
+    statusUpdatedAt: { type: Date, default: null },
+    lastWebhookEvent: { type: String, default: '' },
+    lastPaymentStatus: { type: String, enum: PAYMENT_ATTEMPT_STATUSES, default: '' },
+    lastPaymentId: { type: String, default: '' },
+    lastPaymentAttemptAt: { type: Date, default: null },
+    failureCode: { type: String, default: '' },
+    failureDescription: { type: String, default: '' },
     expireBy: { type: Date, default: null },
     notifyEmail: { type: Boolean, default: true },
     notifySms: { type: Boolean, default: true },

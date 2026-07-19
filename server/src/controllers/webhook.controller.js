@@ -13,38 +13,85 @@ export async function handleRazorpayWebhook(req, res) {
 
     const payload = JSON.parse(rawBody.toString('utf8'));
     const event = payload.event;
-    const entity = payload.payload?.payment_link?.entity || payload.payload?.payment?.entity || {};
+    const linkEntity = payload.payload?.payment_link?.entity || {};
+    const paymentEntity = payload.payload?.payment?.entity || {};
+    const paymentId =
+      paymentEntity.id ||
+      linkEntity.payment_id ||
+      linkEntity.payments?.[0]?.payment_id ||
+      '';
+    const linkId =
+      linkEntity.id ||
+      paymentEntity.payment_link_id ||
+      paymentEntity.notes?.payment_link_id ||
+      paymentEntity.notes?.razorpay_payment_link_id ||
+      '';
+    const eventAt = payload.created_at ? new Date(payload.created_at * 1000) : new Date();
 
-    const eventId = payload.event_id || `${event}:${entity.id || Date.now()}`;
+    const eventId =
+      payload.event_id ||
+      `${event}:${linkId || paymentId || payload.created_at || Date.now()}`;
     const isNew = await recordWebhookEvent(eventId, {
-      razorpayPaymentId: entity.payment_id || entity.id || '',
-      razorpayLinkId: entity.id || '',
+      razorpayPaymentId: paymentId,
+      razorpayLinkId: linkId,
       eventType: event,
+      failureCode: paymentEntity.error_code || '',
+      failureDescription: paymentEntity.error_description || '',
+      eventOccurredAt: eventAt,
     });
 
     if (!isNew) {
       return res.json({ success: true, duplicate: true });
     }
 
-    const linkEvents = ['payment_link.paid', 'payment_link.partially_paid'];
-    if (linkEvents.includes(event)) {
-      const linkId = entity.id;
-      const link = await RazorpayPaymentLink.findOne({ razorpayLinkId: linkId });
-      if (link) {
-        await markLinkPaid(link, {
-          paymentId: entity.payment_id || entity.payments?.[0]?.payment_id,
-          razorpay_payment_id: entity.payment_id,
-        });
-      }
-    }
+    const link = linkId
+      ? await RazorpayPaymentLink.findOne({ razorpayLinkId: linkId })
+      : null;
 
-    if (event === 'payment.captured') {
-      const paymentLinkId = entity.notes?.payment_link_id || entity.payment_link_id;
-      if (paymentLinkId) {
-        const link = await RazorpayPaymentLink.findOne({ razorpayLinkId: paymentLinkId });
-        if (link) {
-          await markLinkPaid(link, { paymentId: entity.id });
-        }
+    if (link) {
+      link.lastWebhookEvent = event;
+
+      if (event === 'payment_link.paid') {
+        link.statusUpdatedAt = eventAt;
+        link.lastPaymentStatus = 'captured';
+        link.lastPaymentId = paymentId;
+        link.lastPaymentAttemptAt = eventAt;
+        link.failureCode = '';
+        link.failureDescription = '';
+        await markLinkPaid(link, { paymentId });
+      } else if (event === 'payment_link.partially_paid') {
+        link.statusUpdatedAt = eventAt;
+        if (link.status !== 'paid') link.status = 'partially_paid';
+        link.lastPaymentStatus = 'captured';
+        link.lastPaymentId = paymentId;
+        link.lastPaymentAttemptAt = eventAt;
+        link.failureCode = '';
+        link.failureDescription = '';
+        await link.save();
+      } else if (event === 'payment_link.cancelled') {
+        link.statusUpdatedAt = eventAt;
+        if (link.status !== 'paid') link.status = 'cancelled';
+        await link.save();
+      } else if (event === 'payment_link.expired') {
+        link.statusUpdatedAt = eventAt;
+        if (link.status !== 'paid') link.status = 'expired';
+        await link.save();
+      } else if (event === 'payment.failed') {
+        // A failed attempt does not make the link itself failed; Razorpay may allow a retry.
+        link.lastPaymentStatus = 'failed';
+        link.lastPaymentId = paymentId;
+        link.lastPaymentAttemptAt = eventAt;
+        link.failureCode = paymentEntity.error_code || '';
+        link.failureDescription = paymentEntity.error_description || 'Payment attempt failed';
+        await link.save();
+      } else if (event === 'payment.captured') {
+        // payment_link.paid is authoritative for full payment and ticket creation.
+        link.lastPaymentStatus = 'captured';
+        link.lastPaymentId = paymentId;
+        link.lastPaymentAttemptAt = eventAt;
+        link.failureCode = '';
+        link.failureDescription = '';
+        await link.save();
       }
     }
 

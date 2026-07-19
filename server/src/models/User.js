@@ -39,7 +39,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     name: this.name,
     phone: this.phone,
     role: this.role,
-    companyId: this.companyId?.toString?.() ?? this.companyId,
+    companyId: this.companyId?._id?.toString?.() ?? this.companyId?.toString?.() ?? this.companyId,
     isActive: this.isActive,
     isCompanyAdmin: this.isCompanyAdmin,
     isPlatformAdmin: this.isPlatformAdmin,
