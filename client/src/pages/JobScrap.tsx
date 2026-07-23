@@ -19,6 +19,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { jobScrapApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { canAccessModule } from '@/lib/permissions';
 import { Toggle, ToggleField } from '@/components/ui/Toggle';
 import { MultiSelectSearch } from '@/components/ui/MultiSelectSearch';
@@ -42,6 +43,8 @@ const EMPTY_FILTERS: JobSearchFilters = {
   job_title_or: [],
   job_country_code_or: [],
   url_domain_or: [],
+  url_domain_not: [],
+  company_domain_or: [],
   job_location_ids: [],
   posted_filter_mode: 'days',
   posted_at_max_age_hours: 24,
@@ -92,6 +95,12 @@ function FilterChips({ filters }: { filters: JobSearchFilters }) {
   if (filters.job_title_or.length) chips.push(`Titles: ${filters.job_title_or.slice(0, 3).join(', ')}${filters.job_title_or.length > 3 ? '…' : ''}`);
   if (filters.job_country_code_or.length) chips.push(`Countries: ${filters.job_country_code_or.join(', ')}`);
   if (filters.url_domain_or.length) chips.push(`Domains: ${filters.url_domain_or.join(', ')}`);
+  if (filters.url_domain_not?.length) chips.push(`Except: ${filters.url_domain_not.join(', ')}`);
+  if (filters.company_domain_or?.length) {
+    chips.push(
+      `Companies: ${filters.company_domain_or.slice(0, 3).join(', ')}${filters.company_domain_or.length > 3 ? '…' : ''}`
+    );
+  }
   if (filters.job_location_ids.length) chips.push(`${filters.job_location_ids.length} city location(s)`);
   const postedMode = resolvePostedMode(filters);
   if (postedMode === 'range' && (filters.posted_at_gte || filters.posted_at_lte)) {
@@ -138,6 +147,9 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
   const [selectedTitles, setSelectedTitles] = useState<string[]>([]);
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [exceptDomains, setExceptDomains] = useState<string[]>([]);
+  const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
   const [locationIds, setLocationIds] = useState('');
   const [postedMode, setPostedMode] = useState<PostedFilterMode>('days');
   const [maxAgeHours, setMaxAgeHours] = useState(24);
@@ -147,7 +159,6 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
   const [remote, setRemote] = useState<'any' | 'yes' | 'no'>('any');
   const [limit, setLimit] = useState(25);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const titleOptions = useMemo(
     () =>
@@ -170,6 +181,20 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
         .map((i) => ({ value: i.value, label: i.label })),
     [masterItems]
   );
+  const cityOptions = useMemo(
+    () =>
+      masterItems
+        .filter((i) => i.category === 'city' && i.isActive)
+        .map((i) => ({ value: i.value, label: i.label })),
+    [masterItems]
+  );
+  const companyOptions = useMemo(
+    () =>
+      masterItems
+        .filter((i) => i.category === 'company' && i.isActive)
+        .map((i) => ({ value: i.value, label: i.label })),
+    [masterItems]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -182,6 +207,9 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
     setSelectedTitles(f.job_title_or || []);
     setSelectedCountries(f.job_country_code_or || []);
     setSelectedDomains(f.url_domain_or || []);
+    setExceptDomains(f.url_domain_not || []);
+    setSelectedCities((f.job_location_ids || []).map(String));
+    setSelectedCompanies(f.company_domain_or || []);
     setLocationIds(formatList(f.job_location_ids));
     setPostedMode(resolvePostedMode(f));
     setMaxAgeHours(f.posted_at_max_age_hours || 24);
@@ -190,7 +218,6 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
     setPostedLte(f.posted_at_lte || '');
     setRemote(f.remote === true ? 'yes' : f.remote === false ? 'no' : 'any');
     setLimit(f.limit || 25);
-    setError('');
   }, [open, initial]);
 
   if (!open) return null;
@@ -204,27 +231,43 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError('Profile name is required');
+      toast.error('Profile name is required');
       return;
     }
     if (!scheduleDays.length) {
-      setError('Select at least one schedule day');
+      toast.error('Select at least one schedule day');
       return;
     }
-    if (!selectedTitles.length && !selectedCountries.length && !selectedDomains.length) {
-      setError('Select at least one job title, country, or domain');
+    if (
+      !selectedTitles.length &&
+      !selectedCountries.length &&
+      !selectedDomains.length &&
+      !exceptDomains.length &&
+      !selectedCities.length &&
+      !selectedCompanies.length
+    ) {
+      toast.error('Select at least one job title, country, domain, city, or company');
       return;
     }
     if (postedMode === 'range' && !postedGte && !postedLte) {
-      setError('Select a start or end date for the calendar range');
+      toast.error('Select a start or end date for the calendar range');
       return;
     }
+
+    const cityIds = [
+      ...new Set([
+        ...selectedCities.map((id) => parseInt(id, 10)).filter((n) => !Number.isNaN(n)),
+        ...parseNumberList(locationIds),
+      ]),
+    ];
 
     const filters: JobSearchFilters = {
       job_title_or: selectedTitles,
       job_country_code_or: selectedCountries,
-      url_domain_or: selectedDomains,
-      job_location_ids: parseNumberList(locationIds),
+      url_domain_or: selectedDomains.filter((d) => !exceptDomains.includes(d)),
+      url_domain_not: exceptDomains,
+      company_domain_or: selectedCompanies,
+      job_location_ids: cityIds,
       posted_filter_mode: postedMode,
       posted_at_max_age_hours: maxAgeHours,
       posted_at_max_age_days: maxAgeDays,
@@ -235,7 +278,6 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
     };
 
     setSaving(true);
-    setError('');
     try {
       const payload = { name: name.trim(), filters, scheduleTime, scheduleDays, timezone, isActive, companyId: companyId || undefined };
       if (initial) await jobScrapApi.updateProfile(initial.id, payload);
@@ -243,7 +285,7 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save profile');
+      toast.error(err instanceof Error ? err.message : 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -262,10 +304,6 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6 p-6">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          )}
-
           <section className="space-y-4">
             <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-body">
               <Settings2 className="h-4 w-4" /> Profile
@@ -308,20 +346,71 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-heading">ATS domains</label>
+                <label className="mb-1 block text-sm text-heading">Only these domains</label>
                 <MultiSelectSearch
                   options={domainOptions}
                   value={selectedDomains}
-                  onChange={setSelectedDomains}
+                  onChange={(next) => {
+                    setSelectedDomains(next);
+                    setExceptDomains((prev) => prev.filter((d) => !next.includes(d)));
+                  }}
                   placeholder="Search domains…"
                   emptyMessage="No domains available"
                 />
+                <p className="mt-1 text-xs text-body">
+                  TheirStack <code className="text-[11px]">url_domain_or</code> — include only these sources.
+                </p>
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-sm text-heading">City location IDs (optional)</label>
+              <label className="mb-1 block text-sm text-heading">Except sources</label>
+              <MultiSelectSearch
+                options={domainOptions}
+                value={exceptDomains}
+                onChange={(next) => {
+                  setExceptDomains(next);
+                  setSelectedDomains((prev) => prev.filter((d) => !next.includes(d)));
+                }}
+                placeholder="Exclude LinkedIn, Indeed, …"
+                emptyMessage="No domains available"
+              />
+              <p className="mt-1 text-xs text-body">
+                TheirStack <code className="text-[11px]">url_domain_not</code> — scrape all matching jobs except
+                these job boards/sources.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-heading">Cities</label>
+                <MultiSelectSearch
+                  options={cityOptions}
+                  value={selectedCities}
+                  onChange={setSelectedCities}
+                  placeholder="Search cities…"
+                  emptyMessage="No cities seeded yet — run seed:theirstack-master"
+                />
+                <p className="mt-1 text-xs text-body">
+                  TheirStack location IDs for <code className="text-[11px]">job_location_or</code>.
+                </p>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-heading">Companies</label>
+                <MultiSelectSearch
+                  options={companyOptions}
+                  value={selectedCompanies}
+                  onChange={setSelectedCompanies}
+                  placeholder="Search companies…"
+                  emptyMessage="No companies seeded yet (needs TheirStack credits)"
+                />
+                <p className="mt-1 text-xs text-body">
+                  TheirStack <code className="text-[11px]">company_domain_or</code>.
+                </p>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-heading">Extra city location IDs (optional)</label>
               <input className="np-input w-full" value={locationIds} onChange={(e) => setLocationIds(e.target.value)} placeholder="5128581, 1273294 — TheirStack city IDs" />
-              <p className="mt-1 text-xs text-body">Optional. Country codes already cover country-wide searches.</p>
+              <p className="mt-1 text-xs text-body">Optional extras beyond the Cities picker above.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -424,7 +513,6 @@ function ManualJobModal({ open, companyId, onClose, onSaved }: ManualJobModalPro
     hybrid: false,
   });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -441,7 +529,6 @@ function ManualJobModal({ open, companyId, onClose, onSaved }: ManualJobModalPro
       remote: false,
       hybrid: false,
     });
-    setError('');
   }, [open]);
 
   if (!open) return null;
@@ -452,17 +539,16 @@ function ManualJobModal({ open, companyId, onClose, onSaved }: ManualJobModalPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.jobTitle.trim()) {
-      setError('Job title is required');
+      toast.error('Job title is required');
       return;
     }
     setSaving(true);
-    setError('');
     try {
       await jobScrapApi.createManualJob({ ...form, companyId: companyId || undefined });
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add job');
+      toast.error(err instanceof Error ? err.message : 'Failed to add job');
     } finally {
       setSaving(false);
     }
@@ -476,9 +562,6 @@ function ManualJobModal({ open, companyId, onClose, onSaved }: ManualJobModalPro
           <p className="mt-1 text-sm text-body">Recruiters can apply to manual listings alongside scraped jobs.</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          )}
           <div>
             <label className="mb-1 block text-sm text-heading">Job title *</label>
             <input className="np-input w-full" value={form.jobTitle} onChange={(e) => set('jobTitle', e.target.value)} />
@@ -552,11 +635,10 @@ export default function JobScrap() {
   const [jobStatus, setJobStatus] = useState('');
   const [scrapedFrom, setScrapedFrom] = useState('');
   const [scrapedTo, setScrapedTo] = useState('');
+  const [profileCountryFilter, setProfileCountryFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
   const [profileModal, setProfileModal] = useState<JobSearchProfile | null | 'new'>(null);
   const [manualModal, setManualModal] = useState(false);
   const [masterItems, setMasterItems] = useState<JobScrapMasterItem[]>([]);
@@ -578,9 +660,13 @@ export default function JobScrap() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const profileParams: Record<string, string> = {};
+      if (effectiveCompanyId) profileParams.companyId = effectiveCompanyId;
+      if (profileCountryFilter) profileParams.country = profileCountryFilter;
+
       const [statsData, profilesData, runsData] = await Promise.all([
         jobScrapApi.stats(effectiveCompanyId || undefined),
-        jobScrapApi.listProfiles(effectiveCompanyId || undefined),
+        jobScrapApi.listProfiles(profileParams),
         jobScrapApi.listRuns(effectiveCompanyId || undefined),
       ]);
       setStats(statsData.stats);
@@ -588,11 +674,11 @@ export default function JobScrap() {
       setRuns(runsData.runs);
       await loadMaster();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load job scrap data');
+      toast.error(err instanceof Error ? err.message : 'Failed to load job scrap data');
     } finally {
       setLoading(false);
     }
-  }, [effectiveCompanyId, loadMaster]);
+  }, [effectiveCompanyId, loadMaster, profileCountryFilter]);
 
   const loadJobs = useCallback(async () => {
     try {
@@ -642,17 +728,23 @@ export default function JobScrap() {
 
   const activeProfiles = useMemo(() => profiles.filter((p) => p.isActive), [profiles]);
 
+  const profileCountryOptions = useMemo(
+    () =>
+      masterItems
+        .filter((i) => i.category === 'country_code' && i.isActive)
+        .map((i) => ({ value: i.value, label: i.label })),
+    [masterItems]
+  );
+
   const handleSyncProfile = async (id: string) => {
     setSyncing(id);
-    setError('');
-    setMessage('');
     try {
       const result = await jobScrapApi.syncProfile(id);
-      setMessage(`Synced ${result.jobsUpserted} job(s) from ${result.jobsFetched} fetched`);
+      toast.success(`Synced ${result.jobsUpserted} job(s) from ${result.jobsFetched} fetched`);
       load();
       if (tab === 'jobs') loadJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync failed');
+      toast.error(err instanceof Error ? err.message : 'Sync failed');
     } finally {
       setSyncing(null);
     }
@@ -660,16 +752,14 @@ export default function JobScrap() {
 
   const handleSyncAll = async () => {
     setSyncingAll(true);
-    setError('');
-    setMessage('');
     try {
       const result = await jobScrapApi.syncAll(effectiveCompanyId || undefined);
       const ok = result.results.filter((r) => r.success).length;
-      setMessage(`Synced ${ok} of ${result.results.length} active profile(s)`);
+      toast.success(`Synced ${ok} of ${result.results.length} active profile(s)`);
       load();
       if (tab === 'jobs') loadJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync all failed');
+      toast.error(err instanceof Error ? err.message : 'Sync all failed');
     } finally {
       setSyncingAll(false);
     }
@@ -679,10 +769,10 @@ export default function JobScrap() {
     if (!window.confirm('Delete this search profile? Scheduled syncs will stop.')) return;
     try {
       await jobScrapApi.deleteProfile(id);
-      setMessage('Profile deleted');
+      toast.success('Profile deleted');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete profile');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete profile');
     }
   };
 
@@ -691,7 +781,7 @@ export default function JobScrap() {
       await jobScrapApi.updateProfile(profile.id, { isActive: !profile.isActive });
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update profile');
+      toast.error(err instanceof Error ? err.message : 'Failed to update profile');
     }
   };
 
@@ -702,7 +792,7 @@ export default function JobScrap() {
       loadJobs();
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete job');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete job');
     }
   };
 
@@ -764,13 +854,6 @@ export default function JobScrap() {
         </div>
       )}
 
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div>
-      )}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {[
           { label: 'Total jobs', value: stats?.total ?? 0, icon: Briefcase },
@@ -815,17 +898,62 @@ export default function JobScrap() {
         </div>
       ) : tab === 'profiles' ? (
         <div className="space-y-4">
+          <div className="np-card flex flex-wrap items-end gap-3 p-4">
+            <div className="min-w-[220px]">
+              <label className="mb-1 block text-xs font-medium text-heading">Country</label>
+              <select
+                className="np-input w-full"
+                value={profileCountryFilter}
+                onChange={(e) => setProfileCountryFilter(e.target.value)}
+              >
+                <option value="">All countries</option>
+                {profileCountryOptions.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            {profileCountryFilter && (
+              <button
+                type="button"
+                className="np-btn-secondary text-sm"
+                onClick={() => setProfileCountryFilter('')}
+              >
+                Clear filter
+              </button>
+            )}
+            {profileCountryFilter && (
+              <p className="text-sm text-body">
+                Showing profiles that search in{' '}
+                <span className="font-medium text-heading">
+                  {profileCountryOptions.find((c) => c.value === profileCountryFilter)?.label
+                    || profileCountryFilter}
+                </span>
+                {' '}({profiles.length} profile{profiles.length === 1 ? '' : 's'})
+              </p>
+            )}
+          </div>
+
           {!profiles.length ? (
             <div className="np-card flex flex-col items-center justify-center px-6 py-16 text-center">
               <Filter className="h-10 w-10 text-body" />
-              <h3 className="mt-4 text-lg text-heading">No search profiles yet</h3>
+              <h3 className="mt-4 text-lg text-heading">
+                {profileCountryFilter ? 'No profiles for this country' : 'No search profiles yet'}
+              </h3>
               <p className="mt-1 max-w-md text-sm text-body">
-                Create a profile with job title filters and a daily schedule. Jobs sync automatically via cron at the configured time.
+                {profileCountryFilter
+                  ? 'Try another country or clear the filter to see all profiles.'
+                  : 'Create a profile with job title filters and a daily schedule. Jobs sync automatically via cron at the configured time.'}
               </p>
-              <button type="button" className="np-btn-primary mt-6" onClick={() => setProfileModal('new')}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create first profile
-              </button>
+              {profileCountryFilter ? (
+                <button type="button" className="np-btn-secondary mt-6" onClick={() => setProfileCountryFilter('')}>
+                  Clear country filter
+                </button>
+              ) : (
+                <button type="button" className="np-btn-primary mt-6" onClick={() => setProfileModal('new')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create first profile
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -1138,14 +1266,14 @@ export default function JobScrap() {
         companyId={effectiveCompanyId}
         masterItems={masterItems}
         onClose={() => setProfileModal(null)}
-        onSaved={() => { setMessage(profileModal === 'new' ? 'Profile created' : 'Profile updated'); load(); }}
+        onSaved={() => { toast.success(profileModal === 'new' ? 'Profile created' : 'Profile updated'); load(); }}
       />
 
       <ManualJobModal
         open={manualModal}
         companyId={effectiveCompanyId}
         onClose={() => setManualModal(false)}
-        onSaved={() => { setMessage('Manual job added'); load(); loadJobs(); }}
+        onSaved={() => { toast.success('Manual job added'); load(); loadJobs(); }}
       />
     </div>
   );

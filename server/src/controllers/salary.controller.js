@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import Company from '../models/Company.js';
 import { getCompanyFilter } from '../services/billing.service.js';
 import { verifySalariesPassword } from '../middleware/auth.js';
+import { getSalaryCurrency } from '../constants/payment.js';
 
 function salaryToJSON(doc) {
   const o = doc.toObject ? doc.toObject() : doc;
@@ -39,6 +40,65 @@ function leaveToJSON(doc) {
   };
 }
 
+function parseDateRange(query) {
+  const from = query.from || query.dateFrom;
+  const to = query.to || query.dateTo;
+  let fromDate = null;
+  let toDate = null;
+
+  if (from) {
+    fromDate = new Date(from);
+    if (Number.isNaN(fromDate.getTime())) {
+      throw new Error('Invalid from date');
+    }
+    fromDate.setHours(0, 0, 0, 0);
+  }
+
+  if (to) {
+    toDate = new Date(to);
+    if (Number.isNaN(toDate.getTime())) {
+      throw new Error('Invalid to date');
+    }
+    toDate.setHours(23, 59, 59, 999);
+  }
+
+  if (fromDate && toDate && fromDate > toDate) {
+    throw new Error('From date must be before to date');
+  }
+
+  return { fromDate, toDate };
+}
+
+function applySalaryDateFilter(filter, fromDate, toDate) {
+  if (!fromDate && !toDate) return filter;
+
+  const range = {};
+  if (fromDate) range.$gte = fromDate;
+  if (toDate) range.$lte = toDate;
+
+  return {
+    ...filter,
+    $or: [
+      { effectiveFrom: { ...range, $ne: null } },
+      {
+        $and: [
+          { $or: [{ effectiveFrom: null }, { effectiveFrom: { $exists: false } }] },
+          { createdAt: range },
+        ],
+      },
+    ],
+  };
+}
+
+function applyLeaveDateFilter(filter, fromDate, toDate) {
+  if (!fromDate && !toDate) return filter;
+
+  const next = { ...filter };
+  if (fromDate) next.endDate = { ...(next.endDate || {}), $gte: fromDate };
+  if (toDate) next.startDate = { ...(next.startDate || {}), $lte: toDate };
+  return next;
+}
+
 export async function verifyPassword(req, res) {
   const { password } = req.body;
   if (!verifySalariesPassword(password)) {
@@ -49,13 +109,17 @@ export async function verifyPassword(req, res) {
 
 export async function listSalaries(req, res) {
   try {
-    const filter = getCompanyFilter(req.user, req.query.companyId);
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const filter = applySalaryDateFilter(getCompanyFilter(req.user, req.query.companyId), fromDate, toDate);
     const items = await EmployeeSalary.find(filter)
       .populate('userId', 'name email')
       .populate('companyId', 'name')
       .sort({ updatedAt: -1 });
     return res.json({ salaries: items.map(salaryToJSON) });
   } catch (err) {
+    if (err.message?.includes('date')) {
+      return res.status(400).json({ error: err.message });
+    }
     return res.status(500).json({ error: 'Failed to list salaries' });
   }
 }
@@ -79,7 +143,7 @@ export async function upsertSalary(req, res) {
     let item = await EmployeeSalary.findOne({ userId, companyId: company._id });
     if (item) {
       item.monthlySalary = Math.round(monthlySalary);
-      item.currency = currency || company.salaryCurrency || 'INR';
+      item.currency = currency || getSalaryCurrency(company);
       item.effectiveFrom = effectiveFrom ? new Date(effectiveFrom) : item.effectiveFrom;
       item.notes = notes ?? item.notes;
       item.updatedBy = req.user._id;
@@ -89,7 +153,7 @@ export async function upsertSalary(req, res) {
         userId,
         companyId: company._id,
         monthlySalary: Math.round(monthlySalary),
-        currency: currency || company.salaryCurrency || 'INR',
+        currency: currency || getSalaryCurrency(company),
         effectiveFrom: effectiveFrom ? new Date(effectiveFrom) : null,
         notes: notes || '',
         createdBy: req.user._id,
@@ -117,12 +181,16 @@ export async function deleteSalary(req, res) {
 
 export async function listLeaves(req, res) {
   try {
-    const filter = getCompanyFilter(req.user, req.query.companyId);
+    const { fromDate, toDate } = parseDateRange(req.query);
+    const filter = applyLeaveDateFilter(getCompanyFilter(req.user, req.query.companyId), fromDate, toDate);
     const items = await EmployeeLeave.find(filter)
       .populate('userId', 'name email')
       .sort({ createdAt: -1 });
     return res.json({ leaves: items.map(leaveToJSON) });
   } catch (err) {
+    if (err.message?.includes('date')) {
+      return res.status(400).json({ error: err.message });
+    }
     return res.status(500).json({ error: 'Failed to list leaves' });
   }
 }

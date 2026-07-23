@@ -4,7 +4,7 @@ import {
   getCompanyFilter,
   canAccessCompany,
   placementToJSON,
-} from '../utils/phase4.helpers.js';
+} from '../utils/staffPortalHelpers.js';
 
 export async function listPlacements(req, res) {
   try {

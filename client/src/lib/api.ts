@@ -25,6 +25,7 @@ import type {
 } from '@/types/phase6';
 import type {
   StudentListItem,
+  StudentListStats,
   StudentDetail,
   StudentTicketRef,
   StudentInterviewRef,
@@ -65,6 +66,7 @@ export interface Company {
   demoProfileIds?: string[];
   paymentTypes?: string[];
   billRatePerDay?: number;
+  billingCurrency?: string;
   salaryCurrency?: string;
   createStudentPassword?: string;
   visaTypes?: string[];
@@ -203,6 +205,11 @@ export const ticketApi = {
       method: 'POST',
       body: JSON.stringify({ assignedTo }),
     }),
+  assignRecruiter: (id: string, recruiterUsername: string | null) =>
+    api<{ ticket: Ticket }>(`/tickets/${id}/assign-recruiter`, {
+      method: 'POST',
+      body: JSON.stringify({ recruiterUsername }),
+    }),
   addNote: (id: string, text: string, type: 'work' | 'onboarding' = 'work') =>
     api<{ ticket: Ticket }>(`/tickets/${id}/notes`, {
       method: 'POST',
@@ -218,12 +225,22 @@ export const ticketApi = {
       method: 'DELETE',
       body: JSON.stringify({ reason }),
     }),
+  restore: (id: string) =>
+    api<{ success: boolean; ticket: Ticket }>(`/tickets/${id}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
   resumeTeam: (companyId?: string) =>
     api<{ members: Array<{ id: string; name: string; email: string }> }>(
       `/tickets/resume-team${companyId ? `?companyId=${companyId}` : ''}`
     ),
   enableFormEdit: (id: string) =>
     api<{ ticket: Ticket }>(`/tickets/${id}/enable-form-edit`, { method: 'POST', body: '{}' }),
+  syncStudentResume: (id: string) =>
+    api<{ success: boolean; message: string; student: { id: string; phone: string; name: string } }>(
+      `/tickets/${id}/sync-student-resume`,
+      { method: 'POST', body: '{}' }
+    ),
   getFormShareLink: (id: string) =>
     api<{ resumeFormViewLink: string; resumeFormViewToken: string }>(
       `/tickets/${id}/form-share-link`,
@@ -237,16 +254,36 @@ export const resumeParseApi = {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
-  buildDownload: (payload: { phone: string; templateId?: string }) =>
-    api<{ success: boolean; result: { downloadUrl?: string; mock?: boolean } }>(
-      '/resume/build-download',
-      { method: 'POST', body: JSON.stringify(payload) }
-    ),
-  updateStudent: (payload: { phone: string; resumeData: unknown }) =>
+  buildDownload: (payload: { phone: string; templateId?: string; companyId?: string }) =>
+    api<{
+      success: boolean;
+      result: { downloadUrl?: string; filename?: string; mock?: boolean; message?: string };
+    }>('/resume/build-download', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateStudent: (payload: { phone: string; resumeData: unknown; companyId?: string }) =>
     api<{ success: boolean; result: unknown }>('/resume/update-student', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  /** Upload PDF/DOCX/TXT → parse → auto-save student.resume */
+  importStudent: (payload: { phone: string; file: File; companyId?: string }) => {
+    const formData = new FormData();
+    formData.append('file', payload.file);
+    formData.append('phone', payload.phone);
+    if (payload.companyId) formData.append('companyId', payload.companyId);
+    return api<{
+      success: boolean;
+      resume: Record<string, unknown>;
+      source: string;
+      filename: string;
+      message: string;
+    }>('/resume/import-student', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };
 
 export const interviewApi = {
@@ -344,6 +381,12 @@ export const externalApi = {
       method: 'POST',
       body: JSON.stringify(companyId ? { companyId } : {}),
     }),
+  getRecruiter: (username: string, companyId?: string) =>
+    api<{ clerk: ExternalRecruiter }>(
+      `/external/recruiters/${encodeURIComponent(username)}${
+        companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''
+      }`
+    ),
   jobRoles: () => api<{ jobroles: string[] }>('/external/job-roles'),
   createRecruiter: (payload: {
     name: string;
@@ -354,6 +397,20 @@ export const externalApi = {
     companyId?: string;
   }) =>
     api<{ success: boolean }>('/external/recruiters/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateRecruiter: (payload: {
+    username: string;
+    companyId?: string;
+    data: {
+      name?: string;
+      email?: string;
+      mobile?: string;
+      password?: string;
+    };
+  }) =>
+    api<{ success: boolean; clerk: ExternalRecruiter }>('/external/recruiters/update', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -428,10 +485,10 @@ export const salaryApi = {
       method: 'POST',
       body: JSON.stringify({ password }),
     }),
-  list: (companyId?: string) =>
-    api<{ salaries: EmployeeSalary[] }>(
-      `/salaries${companyId ? `?companyId=${companyId}` : ''}`
-    ),
+  list: (params: Record<string, string> = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return api<{ salaries: EmployeeSalary[] }>(`/salaries${qs ? `?${qs}` : ''}`);
+  },
   upsert: (payload: {
     userId: string;
     monthlySalary: number;
@@ -450,10 +507,10 @@ export const salaryApi = {
       method: 'DELETE',
       body: JSON.stringify({ password }),
     }),
-  listLeaves: (companyId?: string) =>
-    api<{ leaves: EmployeeLeave[] }>(
-      `/salaries/leaves${companyId ? `?companyId=${companyId}` : ''}`
-    ),
+  listLeaves: (params: Record<string, string> = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return api<{ leaves: EmployeeLeave[] }>(`/salaries/leaves${qs ? `?${qs}` : ''}`);
+  },
   createLeave: (payload: Partial<EmployeeLeave> & { userId: string; startDate: string; endDate: string }) =>
     api<{ leave: EmployeeLeave }>('/salaries/leaves', {
       method: 'POST',
@@ -555,7 +612,17 @@ export const chatApi = {
 export const studentApi = {
   list: (params: Record<string, string> = {}) => {
     const qs = new URLSearchParams(params).toString();
-    return api<{ students: StudentListItem[] }>(`/students${qs ? `?${qs}` : ''}`);
+    return api<{ students: StudentListItem[]; stats?: StudentListStats }>(
+      `/students${qs ? `?${qs}` : ''}`
+    );
+  },
+  lookupByPhone: (phone: string, companyId?: string) => {
+    const params = new URLSearchParams({ phone });
+    if (companyId) params.set('companyId', companyId);
+    return api<{
+      exists: boolean;
+      student: { id: string; name: string; phone: string; email: string } | null;
+    }>(`/students/lookup?${params.toString()}`);
   },
   get: (phone: string, companyId?: string) =>
     api<{
@@ -565,6 +632,7 @@ export const studentApi = {
       tickets: StudentTicketRef[];
       interviews: StudentInterviewRef[];
       billing: unknown[];
+      activity?: { today: number; week: number; month: number };
     }>(`/students/${encodeURIComponent(phone)}${companyId ? `?companyId=${companyId}` : ''}`),
   create: (payload: {
     name: string;
@@ -577,10 +645,85 @@ export const studentApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  resolveTicketProfile: (ticketId: string) =>
+    api<{
+      exists: boolean;
+      student?: { id: string; phone: string; name: string; email: string };
+      ticket?: {
+        id: string;
+        ticketNumber: string;
+        companyId: string;
+        resumeFormStatus: 'unfilled' | 'partial' | 'completed';
+      };
+      prefill?: {
+        name: string;
+        email: string;
+        mobile: string;
+        role: string;
+        linkedin: string;
+        address: string;
+        visa: string;
+        additionalDetails: Array<{ key: string; data: string }>;
+      };
+    }>(`/students/ticket/${ticketId}/profile`),
+  createFromTicket: (
+    ticketId: string,
+    payload: {
+      name: string;
+      mobile: string;
+      email?: string;
+      role?: string;
+      linkedin?: string;
+      address?: string;
+      visa?: string;
+      additionalDetails?: Array<{ key: string; data: string }>;
+      password: string;
+    }
+  ) =>
+    api<{
+      success: boolean;
+      created: boolean;
+      student: { id: string; phone: string; name: string; email: string };
+      ticketId: string;
+    }>(`/students/ticket/${ticketId}/create`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   updateNotes: (phone: string, notes: string, companyId?: string) =>
     api<{ notes: string }>(`/students/${encodeURIComponent(phone)}/notes`, {
       method: 'PATCH',
       body: JSON.stringify({ notes, companyId }),
+    }),
+  update: (
+    phone: string,
+    payload: {
+      companyId?: string;
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+      email?: string;
+      phone?: string;
+      role?: string;
+      city?: string;
+      state?: string;
+      linkedin?: string;
+      visa?: string;
+      status?: string;
+      recruiterUsername?: string;
+      joinDate?: string;
+      subscriptionAmount?: number;
+      subscriptionDate?: string | null;
+      subscriptionDays?: number;
+      additionalDetails?: Array<{ key: string; data: string }>;
+      notes?: string;
+    }
+  ) =>
+    api<{
+      success: boolean;
+      student: StudentDetail;
+    }>(`/students/${encodeURIComponent(phone)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
     }),
 };
 
@@ -617,10 +760,10 @@ export const jobScrapApi = {
     api<{ stats: JobScrapStats }>(
       `/job-scrap/stats${companyId ? `?companyId=${companyId}` : ''}`
     ),
-  listProfiles: (companyId?: string) =>
-    api<{ profiles: JobSearchProfile[] }>(
-      `/job-scrap/profiles${companyId ? `?companyId=${companyId}` : ''}`
-    ),
+  listProfiles: (params: Record<string, string> = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return api<{ profiles: JobSearchProfile[] }>(`/job-scrap/profiles${qs ? `?${qs}` : ''}`);
+  },
   createProfile: (payload: {
     name: string;
     filters?: Partial<JobSearchFilters>;

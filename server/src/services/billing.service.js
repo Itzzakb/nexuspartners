@@ -1,6 +1,7 @@
 import Counter from '../models/Counter.js';
 import Company from '../models/Company.js';
 import { fetchStudents, resolveApiCompanyName } from './nexusStudentApi.service.js';
+import { getBillingCurrency } from '../constants/payment.js';
 
 export function getCompanyFilter(user, queryCompanyId) {
   if (user.isPlatformAdmin) {
@@ -81,7 +82,7 @@ export async function buildBillingPreview(companyId, year, month) {
   const periodEnd = new Date(year, month, 0, 23, 59, 59);
   const billingMonth = `${year}-${String(month).padStart(2, '0')}`;
   const rate = company.billRatePerDay ?? 4;
-  const currency = company.salaryCurrency || 'INR';
+  const currency = getBillingCurrency(company);
 
   const lines = students.map((student) => {
     const excludedReason = shouldExcludeStudent(student, company);

@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Nexus Partners — Recruiter Portal API",
-    "description": "REST API for the Nexus Partners recruiter mobile/web app.\n\n## Authentication\n1. Call `POST /auth/login` with recruiter username and password.\n2. Store the returned `accessToken`.\n3. Send `Authorization: Bearer <accessToken>` on all protected endpoints.\n\nRecruiter tokens are separate from admin portal tokens (`type: recruiter` in JWT payload).\n\n## Typical flow\n1. Login → get token\n2. `GET /students` → list assigned students\n3. `GET /jobs?studentPhone=...` → matched jobs for selected student\n4. `GET /jobs/{id}?studentPhone=...` → job detail + applicant context\n5. `POST /jobs/{id}/apply` or `POST /jobs/{id}/drop` → record action\n\n## Notes\n- `studentPhone` is the student's phone number (primary identifier).\n- Job list excludes jobs previously **dropped** for that student.\n- Job matching uses the student's role keywords against `jobTitle`.\n- `scrapedFrom` / `scrapedTo` filter on job `createdAt` (YYYY-MM-DD).\n- Pagination: `page` is zero-based; default `limit` is 20 (max 50).\n- **Fix Resume** uses Gemini to tailor the student resume JSON to the job, then saves via the Nexus Partners student API.\n- **Download ATS Resume** builds a job-specific ATS PDF via the Nexus Partners resume build API.",
-    "version": "1.0.0",
+    "description": "REST API for the Nexus Partners recruiter desktop/web app.\n\n## Authentication\n1. Call `POST /auth/login` with recruiter username and password.\n2. Store the returned `accessToken`.\n3. Send `Authorization: Bearer <accessToken>` on all protected endpoints.\n\nRecruiter tokens are separate from admin portal tokens (`type: recruiter` in JWT payload).\n\n## Related docs\n- **Platform Admin API**: [/api/docs](/api/docs)\n- Raw OpenAPI JSON: [/api/docs/recruiter/openapi.json](/api/docs/recruiter/openapi.json)\n\n## Typical flows\n**Job apply (with copy/paste side panel)**\n1. Login → get token\n2. `GET /students` → list assigned students\n3. `GET /jobs?studentPhone=...&minExp=2&maxExp=5&sponsored=true` → matched jobs (optional experience + sponsored filters)\n4. `GET /jobs/{id}?studentPhone=...` → job detail (includes `isApplied`, `isSponsored`)\n5. Option A: `POST /jobs/{id}/apply` → returns `applyUrl` **and** `studentForm` (open URL + show form fields side-by-side)\n6. Option B: `GET /students/{phone}/resume-form` anytime to load the same form payload before/after apply\n\n**Application Tracker**\n1. `GET /applications` → paginated tracker rows\n2. `PATCH /applications/{id}/status` → move through pipeline statuses\n\n**Dashboard / Analytics**\n1. `GET /dashboard?range=7d` → KPIs, trend, recent activity\n2. `GET /analytics` → status breakdown and conversion\n\n## Notes\n- `studentPhone` is the student's phone number (primary identifier).\n- Job list excludes jobs previously **dropped** for that student.\n- Without `q`, job matching uses the student's role keywords against `jobTitle`. Free-text `q` searches broadly and skips strict role match.\n- `minExp` / `maxExp` (aliases `experienceMin` / `experienceMax`) filter jobs by overlapping experience years. Job bands come from explicit years, parsed text, or seniority.\n- `sponsored` / `isSponsored` (`true`|`false`) filters jobs that mention visa sponsorship (H1B / sponsor keywords in description or notes).\n- Each job includes `isApplied` (student already applied / in pipeline) and `isSponsored` (alias of `visaSponsorship`) for card UI. Prefer these flags over parsing `urlDomain` for display — clients should not show scrape source domains on job cards.\n- `scrapedFrom` / `scrapedTo` filter on job `createdAt` (YYYY-MM-DD).\n- Pagination: `page` is zero-based; jobs default `limit` 20 (max 50); applications/resume-library default 50 (max 100).\n- Application statuses: `saved`, `applied`, `interview_scheduled`, `interview_completed`, `offer_received`, `hired`, `rejected`, `dropped`.\n- Resume Library entries are created automatically on Fix Resume / ATS download.\n- **Fix Resume** uses Gemini to tailor the student resume JSON to the job, then saves via the Nexus Partners student API. Optional `improvements[]` can guide the rewrite.\n- **ATS score** on library entries is Gemini-scored (target **90+**) and includes `atsImprovements`, `atsSummary`, `atsMeetsTarget`.\n- **Download ATS Resume** builds a job-specific ATS DOCX via the resume build API.\n- **Student resume form** (`GET /students/{phone}/resume-form` and apply `studentForm`) returns the ticket form the student filled, including **resume email password in plain text**, for recruiter copy/paste into external apply sites. Only assigned recruiters can access it.",
+    "version": "1.3.0",
     "contact": {
       "name": "Nexus Partners",
       "url": "https://nexuspartners.com"
@@ -17,9 +17,17 @@
   ],
   "tags": [
     { "name": "Auth", "description": "Recruiter login and session" },
+    { "name": "Dashboard", "description": "Home KPIs, trends, and recent activity" },
     { "name": "Students", "description": "Assigned students, profiles, notes, tickets" },
     { "name": "Jobs", "description": "Scraped jobs matched to a student" },
-    { "name": "Resume", "description": "Tailor and download ATS resumes" }
+    { "name": "Applications", "description": "Application Tracker pipeline" },
+    { "name": "Resume", "description": "Tailor and download ATS resumes" },
+    { "name": "Resume Library", "description": "Persisted job-specific resumes generated by the recruiter" },
+    { "name": "Interviews", "description": "Interviews for assigned students" },
+    { "name": "Analytics", "description": "Aggregates and conversion metrics" },
+    { "name": "Search", "description": "Global search across students, jobs, and applications" },
+    { "name": "Notifications", "description": "Activity-based notification feed" },
+    { "name": "Settings", "description": "Recruiter profile and password" }
   ],
   "components": {
     "securitySchemes": {
@@ -37,6 +45,26 @@
           "error": { "type": "string", "example": "Invalid username or password" }
         },
         "required": ["error"]
+      },
+      "ApplicationStatus": {
+        "type": "string",
+        "enum": [
+          "saved",
+          "applied",
+          "interview_scheduled",
+          "interview_completed",
+          "offer_received",
+          "hired",
+          "rejected",
+          "dropped"
+        ]
+      },
+      "ApplicationStatusOption": {
+        "type": "object",
+        "properties": {
+          "value": { "$ref": "#/components/schemas/ApplicationStatus" },
+          "label": { "type": "string", "example": "Interview Scheduled" }
+        }
       },
       "RecruiterAccount": {
         "type": "object",
@@ -98,8 +126,40 @@
           "name": { "type": "string", "example": "John Doe" },
           "email": { "type": "string", "example": "john@example.com" },
           "role": { "type": "string", "example": "Software Engineer" },
+          "targetRole": {
+            "type": "string",
+            "description": "Alias of role for My Students table",
+            "example": "Software Engineer"
+          },
           "location": { "type": "string", "example": "Hyderabad" },
+          "city": { "type": "string" },
+          "state": { "type": "string" },
           "isActive": { "type": "boolean", "example": true },
+          "resumeStatus": {
+            "type": "string",
+            "enum": ["ready", "pending", "draft"],
+            "description": "Heuristic from student resume payload"
+          },
+          "subscriptionStatus": {
+            "type": "string",
+            "enum": ["active", "expiring", "none"],
+            "description": "Derived from active SubscriptionSchedule; expiring = due within 7 days"
+          },
+          "subscriptionStatusLabel": {
+            "type": "string",
+            "example": "Active",
+            "description": "Display label for subscriptionStatus"
+          },
+          "applicationCount": {
+            "type": "integer",
+            "example": 12,
+            "description": "Non-dropped application/actions for this student by the recruiter"
+          },
+          "nextDueDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "companyId": { "type": "string" }
         }
       },
@@ -110,7 +170,12 @@
             "type": "array",
             "items": { "$ref": "#/components/schemas/RecruiterStudent" }
           },
-          "total": { "type": "integer", "example": 12 }
+          "total": { "type": "integer", "example": 12 },
+          "assignedCount": {
+            "type": "integer",
+            "example": 12,
+            "description": "Same as total after filters"
+          }
         }
       },
       "StudentActivity": {
@@ -185,7 +250,8 @@
         "type": "object",
         "nullable": true,
         "properties": {
-          "status": { "type": "string", "enum": ["saved", "applied", "dropped"] },
+          "status": { "$ref": "#/components/schemas/ApplicationStatus" },
+          "statusLabel": { "type": "string", "example": "Applied" },
           "appliedAt": { "type": "string", "format": "date-time", "nullable": true },
           "droppedAt": { "type": "string", "format": "date-time", "nullable": true },
           "resumeFixedAt": { "type": "string", "format": "date-time", "nullable": true },
@@ -208,6 +274,7 @@
           "resume": { "type": "object", "additionalProperties": true },
           "source": { "type": "string", "enum": ["gemini", "mock"] },
           "mock": { "type": "boolean" },
+          "libraryEntry": { "$ref": "#/components/schemas/ResumeLibraryItem" },
           "action": {
             "type": "object",
             "properties": {
@@ -223,6 +290,7 @@
           "success": { "type": "boolean" },
           "downloadUrl": { "type": "string", "format": "uri" },
           "mock": { "type": "boolean" },
+          "libraryEntry": { "$ref": "#/components/schemas/ResumeLibraryItem" },
           "result": { "type": "object", "additionalProperties": true }
         }
       },
@@ -249,6 +317,11 @@
           "id": { "type": "string" },
           "theirstackJobId": { "type": "integer", "nullable": true },
           "source": { "type": "string", "enum": ["theirstack", "manual"] },
+          "sourceLabel": {
+            "type": "string",
+            "example": "Internal Scraper",
+            "description": "Display label for source"
+          },
           "searchProfileId": { "type": "string", "nullable": true },
           "companyId": { "type": "string" },
           "jobTitle": { "type": "string", "example": "Senior Software Engineer" },
@@ -259,16 +332,68 @@
           "countryCode": { "type": "string", "example": "US" },
           "remote": { "type": "boolean" },
           "hybrid": { "type": "boolean" },
+          "workType": {
+            "type": "string",
+            "enum": ["Remote", "Hybrid", "Onsite"],
+            "description": "Derived work type for job cards"
+          },
           "seniority": { "type": "string" },
+          "minExperienceYears": {
+            "type": "number",
+            "nullable": true,
+            "description": "Minimum required experience in years (derived from seniority/text when not explicit)"
+          },
+          "maxExperienceYears": {
+            "type": "number",
+            "nullable": true,
+            "description": "Maximum required experience in years (derived from seniority/text when not explicit)"
+          },
           "technologySlugs": { "type": "array", "items": { "type": "string" } },
           "salaryMinUsd": { "type": "number", "nullable": true },
           "salaryMaxUsd": { "type": "number", "nullable": true },
+          "salaryRange": {
+            "type": "string",
+            "example": "$120k–$150k",
+            "description": "Formatted salary range; empty when unknown"
+          },
+          "postedAge": {
+            "type": "string",
+            "example": "3 days ago",
+            "description": "Relative age from datePosted/createdAt"
+          },
+          "visaSponsorship": {
+            "type": "boolean",
+            "description": "Heuristic from job description/notes (H1B / sponsorship keywords). Same value as `isSponsored`."
+          },
+          "isSponsored": {
+            "type": "boolean",
+            "description": "Alias of `visaSponsorship`. Use for Sponsored badges/filters on job cards.",
+            "example": true
+          },
+          "isApplied": {
+            "type": "boolean",
+            "description": "True when this student already applied (or progressed past apply) for this job. True for statuses: applied, interview_scheduled, interview_completed, offer_received, hired, rejected. False when there is no action or only saved.",
+            "example": false
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["Remote", "H1B Sponsor"]
+          },
+          "metaLine": {
+            "type": "string",
+            "example": "Acme Corp · Remote · US · $120k–$150k · 3 days ago"
+          },
           "datePosted": { "type": "string", "format": "date-time", "nullable": true },
           "discoveredAt": { "type": "string", "format": "date-time", "nullable": true },
           "applyUrl": { "type": "string", "format": "uri" },
           "finalUrl": { "type": "string", "format": "uri" },
           "sourceUrl": { "type": "string", "format": "uri" },
-          "urlDomain": { "type": "string", "example": "linkedin.com" },
+          "urlDomain": {
+            "type": "string",
+            "example": "boards.greenhouse.io",
+            "description": "Scrape/board domain when available. Do not display on recruiter job cards; use `sourceLabel` only if a source badge is needed."
+          },
           "notes": { "type": "string" },
           "status": { "type": "string", "enum": ["open", "applied", "closed", "archived"] },
           "lastSyncedAt": { "type": "string", "format": "date-time", "nullable": true },
@@ -301,6 +426,18 @@
           "studentPhone": { "type": "string", "example": "9876543210" }
         }
       },
+      "FixResumeBody": {
+        "type": "object",
+        "required": ["studentPhone"],
+        "properties": {
+          "studentPhone": { "type": "string", "example": "9876543210" },
+          "improvements": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional ATS improvement points to prioritize during Gemini fix (usually from libraryEntry.atsImprovements)"
+          }
+        }
+      },
       "DropJobResponse": {
         "type": "object",
         "properties": {
@@ -314,6 +451,80 @@
           }
         }
       },
+      "StudentResumeFormResponse": {
+        "type": "object",
+        "description": "Student-filled ticket resume form for recruiter apply copy/paste UI. Includes resume email password in plain text for assigned recruiters only.",
+        "properties": {
+          "hasForm": {
+            "type": "boolean",
+            "description": "false when the student has not filled a resume form yet",
+            "example": true
+          },
+          "studentPhone": { "type": "string", "example": "9876543210" },
+          "studentName": { "type": "string", "example": "Amit Kumar" },
+          "studentEmail": { "type": "string", "example": "amit.kumar@gmail.com" },
+          "ticket": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": { "type": "string" },
+              "ticketNumber": { "type": "string", "example": "TKT-002" },
+              "candidateName": { "type": "string" },
+              "resumeFormStatus": {
+                "type": "string",
+                "enum": ["unfilled", "partial", "completed"],
+                "example": "completed"
+              },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          },
+          "rows": {
+            "type": "array",
+            "description": "Simple label/value list for display (password included in plain text)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": { "type": "string", "example": "Resume Email Password" },
+                "value": { "type": "string", "example": "SecretPass123" }
+              }
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Copy-friendly fields. Look for key `resumeEmailPassword` when filling external apply forms.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "example": "resumeEmailPassword",
+                  "description": "Stable field id (e.g. preferredName, resumeEmail, resumeEmailPassword, city)"
+                },
+                "label": { "type": "string", "example": "Resume Email Password" },
+                "value": { "type": "string", "example": "SecretPass123" }
+              }
+            },
+            "example": [
+              { "key": "preferredName", "label": "Preferred Name", "value": "Amit" },
+              { "key": "resumeEmail", "label": "Resume Email", "value": "amit.apply@gmail.com" },
+              { "key": "resumeEmailPassword", "label": "Resume Email Password", "value": "SecretPass123" },
+              { "key": "personalPhone", "label": "Personal Phone", "value": "9876543210" },
+              { "key": "visaStatus", "label": "Visa Status", "value": "F-1 OPT" }
+            ]
+          },
+          "formData": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "Full normalized resume form JSON (includes resumeEmailPassword)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Present when hasForm is false",
+            "example": "No resume form has been filled for this student yet"
+          }
+        }
+      },
       "ApplyJobResponse": {
         "type": "object",
         "properties": {
@@ -323,13 +534,366 @@
             "format": "uri",
             "description": "External apply URL — open in browser"
           },
+          "job": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "jobTitle": { "type": "string" },
+              "companyName": { "type": "string" }
+            }
+          },
           "action": {
             "type": "object",
             "properties": {
+              "id": { "type": "string" },
               "status": { "type": "string", "enum": ["applied"] },
+              "statusLabel": { "type": "string" },
               "appliedAt": { "type": "string", "format": "date-time" }
             }
+          },
+          "studentForm": {
+            "allOf": [{ "$ref": "#/components/schemas/StudentResumeFormResponse" }],
+            "description": "Same payload as GET /students/{phone}/resume-form for side-by-side copy/paste while applying"
           }
+        }
+      },
+      "RecruiterApplication": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/ApplicationStatus" },
+          "statusLabel": { "type": "string", "example": "Applied" },
+          "studentPhone": { "type": "string" },
+          "studentName": { "type": "string" },
+          "companyName": { "type": "string" },
+          "jobTitle": { "type": "string" },
+          "jobId": { "type": "string" },
+          "source": { "type": "string", "example": "Internal Scraper" },
+          "sourceRaw": { "type": "string", "example": "theirstack" },
+          "location": { "type": "string" },
+          "remote": { "type": "boolean" },
+          "hybrid": { "type": "boolean" },
+          "salaryRange": { "type": "string" },
+          "appliedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "droppedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "statusUpdatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "resumeFixedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "atsResumeUrl": { "type": "string" },
+          "notes": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "job": { "type": "object", "nullable": true, "additionalProperties": true }
+        }
+      },
+      "ApplicationListResponse": {
+        "type": "object",
+        "properties": {
+          "applications": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RecruiterApplication" }
+          },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "statuses": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ApplicationStatusOption" },
+            "description": "Tracker statuses (excludes dropped)"
+          }
+        }
+      },
+      "ApplicationDetailResponse": {
+        "type": "object",
+        "properties": {
+          "application": { "$ref": "#/components/schemas/RecruiterApplication" }
+        }
+      },
+      "UpdateApplicationStatusRequest": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "$ref": "#/components/schemas/ApplicationStatus" },
+          "notes": { "type": "string", "description": "Optional notes stored on the action" }
+        }
+      },
+      "ApplicationStatusesResponse": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ApplicationStatusOption" }
+          }
+        }
+      },
+      "ResumeLibraryItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "studentPhone": { "type": "string" },
+          "studentName": { "type": "string" },
+          "jobId": { "type": "string", "nullable": true },
+          "jobTitle": { "type": "string" },
+          "companyName": { "type": "string" },
+          "downloadUrl": { "type": "string" },
+          "atsScore": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100,
+            "example": 82,
+            "description": "Gemini ATS score (0-100). Client target is 90+."
+          },
+          "atsSummary": {
+            "type": "string",
+            "description": "Short Gemini summary of overall ATS fit"
+          },
+          "atsImprovements": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Actionable improvement points from Gemini. Empty or short when score is already 90+."
+          },
+          "atsMeetsTarget": {
+            "type": "boolean",
+            "description": "True when atsScore >= atsTargetScore (90)"
+          },
+          "atsTargetScore": {
+            "type": "integer",
+            "example": 90,
+            "description": "Pass threshold required by client"
+          },
+          "atsScoredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": ["fix_resume", "ats_download", "manual"],
+            "description": "How the library entry was created/updated"
+          },
+          "notes": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "hasResumeData": { "type": "boolean" }
+        }
+      },
+      "ResumeLibraryListResponse": {
+        "type": "object",
+        "properties": {
+          "resumes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ResumeLibraryItem" }
+          },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" }
+        }
+      },
+      "ResumeLibraryDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ResumeLibraryItem" },
+          {
+            "type": "object",
+            "properties": {
+              "resumeData": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": true,
+                "description": "Full tailored resume JSON when available"
+              }
+            }
+          }
+        ]
+      },
+      "DashboardKpis": {
+        "type": "object",
+        "properties": {
+          "assignedStudents": { "type": "integer" },
+          "assignedStudentsDelta": {
+            "type": "integer",
+            "description": "Students created this calendar month (when raw.createdAt available)"
+          },
+          "applicationsToday": { "type": "integer" },
+          "applicationsTodayDelta": {
+            "type": "integer",
+            "description": "Today minus yesterday"
+          },
+          "applicationsThisWeek": { "type": "integer" },
+          "applicationsWoWPercent": {
+            "type": "integer",
+            "description": "Week-over-week percent change"
+          },
+          "interviewsScheduled": { "type": "integer" },
+          "resumeGenerations": { "type": "integer" }
+        }
+      },
+      "DashboardActivityItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["resume_generated", "application_submitted", "interview_scheduled"]
+          },
+          "text": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "DashboardResponse": {
+        "type": "object",
+        "properties": {
+          "kpis": { "$ref": "#/components/schemas/DashboardKpis" },
+          "trend": {
+            "type": "object",
+            "properties": {
+              "range": { "type": "string", "enum": ["7d", "30d", "90d"] },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "date": { "type": "string", "format": "date", "example": "2026-07-20" },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "recentActivity": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DashboardActivityItem" }
+          }
+        }
+      },
+      "AnalyticsResponse": {
+        "type": "object",
+        "properties": {
+          "byStatus": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": { "$ref": "#/components/schemas/ApplicationStatus" },
+                "label": { "type": "string" },
+                "count": { "type": "integer" }
+              }
+            }
+          },
+          "topStudents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "studentPhone": { "type": "string" },
+                "studentName": { "type": "string" },
+                "applications": { "type": "integer" }
+              }
+            }
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "applications": { "type": "integer" },
+              "resumes": { "type": "integer" },
+              "hired": { "type": "integer" },
+              "conversionRate": {
+                "type": "number",
+                "example": 4.5,
+                "description": "hired / applications * 100, one decimal"
+              }
+            }
+          }
+        }
+      },
+      "GlobalSearchResponse": {
+        "type": "object",
+        "properties": {
+          "students": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RecruiterStudent" }
+          },
+          "jobs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ScrapedJob" }
+          },
+          "applications": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RecruiterApplication" }
+          }
+        }
+      },
+      "InterviewItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "interviewNumber": { "type": "string" },
+          "candidateName": { "type": "string" },
+          "phone": { "type": "string" },
+          "position": { "type": "string" },
+          "companyName": { "type": "string" },
+          "interviewDateTime": { "type": "string", "format": "date-time", "nullable": true },
+          "currentStage": {
+            "type": "string",
+            "enum": ["interview_reported", "ready_for_interview", "interview_completed"]
+          },
+          "isCancelled": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InterviewListResponse": {
+        "type": "object",
+        "properties": {
+          "interviews": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InterviewItem" }
+          },
+          "total": { "type": "integer" }
+        }
+      },
+      "UpdateSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string" }
+        }
+      },
+      "UpdateSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "recruiter": { "$ref": "#/components/schemas/RecruiterAccount" }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": ["currentPassword", "newPassword"],
+        "properties": {
+          "currentPassword": { "type": "string", "format": "password" },
+          "newPassword": {
+            "type": "string",
+            "format": "password",
+            "minLength": 6,
+            "description": "Minimum 6 characters"
+          }
+        }
+      },
+      "NotificationItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "text": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "read": { "type": "boolean" }
+        }
+      },
+      "NotificationsResponse": {
+        "type": "object",
+        "properties": {
+          "notifications": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/NotificationItem" }
+          },
+          "unreadCount": { "type": "integer" }
         }
       }
     }
@@ -384,11 +948,112 @@
         }
       }
     },
+    "/dashboard": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Dashboard KPIs, trend, and activity",
+        "description": "Home screen metrics for the logged-in recruiter: assigned students, applications, interviews, resume generations, daily trend, and recent activity feed.",
+        "operationId": "getDashboard",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "description": "Trend window",
+            "schema": { "type": "string", "enum": ["7d", "30d", "90d"], "default": "7d" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard payload",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DashboardResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/analytics": {
+      "get": {
+        "tags": ["Analytics"],
+        "summary": "Analytics aggregates",
+        "description": "Application counts by status, top students by applications, resume count, hired count, and conversion rate.",
+        "operationId": "getAnalytics",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Analytics payload",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AnalyticsResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Global search",
+        "description": "Search assigned students, open jobs, and applications. Empty `q` returns empty arrays.",
+        "operationId": "searchAll",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search text",
+            "schema": { "type": "string", "example": "acme" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grouped search results (up to 20 per group)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GlobalSearchResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List notifications",
+        "description": "Activity-derived notifications from the last 7 days of dashboard activity (stub feed for desktop UI).",
+        "operationId": "listNotifications",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Notification list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/NotificationsResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/students": {
       "get": {
         "tags": ["Students"],
         "summary": "List assigned students",
-        "description": "Returns students assigned to the logged-in recruiter (Nexus Partners student API).",
+        "description": "Returns students assigned to the logged-in recruiter, enriched with resume status, subscription status, application count, and next due date.",
         "operationId": "listStudents",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -397,6 +1062,22 @@
             "in": "query",
             "description": "Search by name, phone, email, or role",
             "schema": { "type": "string" }
+          },
+          {
+            "name": "subscriptionStatus",
+            "in": "query",
+            "description": "Filter by subscription status",
+            "schema": { "type": "string", "enum": ["active", "expiring", "none"] }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort order",
+            "schema": {
+              "type": "string",
+              "enum": ["name_asc", "name_desc", "applications_asc", "applications_desc"],
+              "default": "name_asc"
+            }
           }
         ],
         "responses": {
@@ -478,6 +1159,36 @@
         }
       }
     },
+    "/students/{phone}/resume-form": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "Get student resume form details",
+        "description": "Returns the ticket resume form the student filled, as label/value rows and copy-friendly fields.\n\n**Security note:** `resumeEmailPassword` is returned in **plain text** so recruiters can paste it into external job applications. Only recruiters assigned to the student can call this endpoint.\n\nUse this to render a side panel while opening the job `applyUrl`.",
+        "operationId": "getStudentResumeForm",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "example": "9876543210" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resume form payload (hasForm may be false if student never filled the form)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StudentResumeFormResponse" }
+              }
+            }
+          },
+          "403": { "description": "Student not assigned to recruiter", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/students/{phone}/notes": {
       "patch": {
         "tags": ["Students"],
@@ -542,11 +1253,189 @@
         }
       }
     },
+    "/applications": {
+      "get": {
+        "tags": ["Applications"],
+        "summary": "List applications (Application Tracker)",
+        "description": "Paginated application/actions for the logged-in recruiter. Default excludes `dropped`. Includes status option list for UI filters.",
+        "operationId": "listApplications",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by a single status (including dropped). Omit for all tracker statuses.",
+            "schema": { "$ref": "#/components/schemas/ApplicationStatus" }
+          },
+          {
+            "name": "studentPhone",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search student name/phone, company, or job title",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApplicationListResponse" }
+              }
+            }
+          },
+          "400": { "description": "Invalid status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/applications/statuses": {
+      "get": {
+        "tags": ["Applications"],
+        "summary": "List application status options",
+        "description": "Tracker statuses with labels (excludes dropped).",
+        "operationId": "listApplicationStatuses",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Status options",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApplicationStatusesResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/applications/{id}": {
+      "get": {
+        "tags": ["Applications"],
+        "summary": "Get application detail",
+        "operationId": "getApplication",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "StudentJobAction id",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApplicationDetailResponse" }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/applications/{id}/status": {
+      "patch": {
+        "tags": ["Applications"],
+        "summary": "Update application status",
+        "description": "Move an application through the tracker pipeline. Preserves original `appliedAt` when already set.",
+        "operationId": "updateApplicationStatus",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateApplicationStatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApplicationDetailResponse" }
+              }
+            }
+          },
+          "400": { "description": "Missing/invalid status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/interviews": {
+      "get": {
+        "tags": ["Interviews"],
+        "summary": "List interviews for assigned students",
+        "description": "Company interviews whose student phone matches one of the recruiter's assigned students.",
+        "operationId": "listInterviews",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by Interview.currentStage",
+            "schema": {
+              "type": "string",
+              "enum": ["interview_reported", "ready_for_interview", "interview_completed"]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search candidate, company, or position",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Interview list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InterviewListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/jobs": {
       "get": {
         "tags": ["Jobs"],
         "summary": "List jobs for a student",
-        "description": "Returns scraped open jobs matched to the student's role. Excludes dropped jobs.",
+        "description": "Returns scraped open jobs matched to the student's **role** (title keywords from the assigned student's role, e.g. Software Engineer / Data Engineer) unless free-text `q` is provided. Excludes dropped jobs.\n\nEach job includes enriched card fields: `sourceLabel`, `salaryRange`, `postedAge`, `workType`, `visaSponsorship`, `isSponsored`, `isApplied`, `tags`, `metaLine`, plus `minExperienceYears` / `maxExperienceYears`.\n\n**UI guidance:** show `isApplied` / `isSponsored` badges on cards; do **not** display `urlDomain` (scrape source).\n\n**Experience filter:** `minExp` and/or `maxExp` (aliases `experienceMin` / `experienceMax`) keep jobs whose experience band overlaps the requested range.\n\n**Sponsored filter:** `sponsored` (alias `isSponsored`) as `true` or `false` filters by visa-sponsorship keywords in description/notes.",
         "operationId": "listJobs",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -571,8 +1460,56 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Search job title, company, or location",
+            "description": "Search title, company, location, description, or skills. When set, skips strict role matching.",
             "schema": { "type": "string" }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Filter by job source",
+            "schema": { "type": "string", "enum": ["theirstack", "manual"] }
+          },
+          {
+            "name": "remote",
+            "in": "query",
+            "description": "Filter remote jobs (`true` / `false`)",
+            "schema": { "type": "string", "enum": ["true", "false"] }
+          },
+          {
+            "name": "sponsored",
+            "in": "query",
+            "description": "Filter by visa sponsorship mention in job text. `true` = sponsored only; `false` = not sponsored. Alias: `isSponsored`.",
+            "schema": { "type": "string", "enum": ["true", "false"], "example": "true" }
+          },
+          {
+            "name": "isSponsored",
+            "in": "query",
+            "description": "Alias of `sponsored`",
+            "schema": { "type": "string", "enum": ["true", "false"] }
+          },
+          {
+            "name": "minExp",
+            "in": "query",
+            "description": "Minimum experience years filter. Returns jobs whose experience band overlaps this value (alias: experienceMin).",
+            "schema": { "type": "number", "minimum": 0, "example": 2 }
+          },
+          {
+            "name": "maxExp",
+            "in": "query",
+            "description": "Maximum experience years filter. Returns jobs whose experience band overlaps this value (alias: experienceMax).",
+            "schema": { "type": "number", "minimum": 0, "example": 5 }
+          },
+          {
+            "name": "experienceMin",
+            "in": "query",
+            "description": "Alias of `minExp`",
+            "schema": { "type": "number", "minimum": 0 }
+          },
+          {
+            "name": "experienceMax",
+            "in": "query",
+            "description": "Alias of `maxExp`",
+            "schema": { "type": "number", "minimum": 0 }
           },
           {
             "name": "scrapedFrom",
@@ -607,7 +1544,7 @@
       "get": {
         "tags": ["Jobs"],
         "summary": "Get job detail",
-        "description": "Job details plus applicant (student) context for the given studentPhone.",
+        "description": "Job details plus applicant (student) context for the given `studentPhone`. The `job` object is enriched the same way as list items: includes `isApplied`, `isSponsored` / `visaSponsorship`, `studentAction`, and other card fields. Clients should not display `urlDomain` on the detail header.",
         "operationId": "getJob",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -684,7 +1621,7 @@
       "post": {
         "tags": ["Jobs"],
         "summary": "Apply to job for student",
-        "description": "Records application for this student and returns the Nexus Partners apply URL to open in a browser.",
+        "description": "Records application for this student, returns the external `applyUrl` to open in a browser, and includes `studentForm` (same shape as `GET /students/{phone}/resume-form`) for a side-by-side copy/paste panel.\n\n**App UX:** open `applyUrl` and render `studentForm.fields` next to it. Password is included in plain text under key `resumeEmailPassword`.",
         "operationId": "applyJob",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -763,11 +1700,157 @@
         }
       }
     },
+    "/resume-library": {
+      "get": {
+        "tags": ["Resume Library"],
+        "summary": "List resume library entries",
+        "description": "Persisted resumes created via Fix Resume / ATS download for this recruiter.",
+        "operationId": "listResumeLibrary",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search student name/phone, job title, or company",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "studentPhone",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resume library list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResumeLibraryListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/resume-library/{id}": {
+      "get": {
+        "tags": ["Resume Library"],
+        "summary": "Get resume library entry",
+        "description": "Includes full `resumeData` when available.",
+        "operationId": "getResumeLibrary",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resume detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resume": { "$ref": "#/components/schemas/ResumeLibraryDetail" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "delete": {
+        "tags": ["Resume Library"],
+        "summary": "Delete resume library entry",
+        "operationId": "deleteResumeLibrary",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/resume-library/{id}/refresh": {
+      "post": {
+        "tags": ["Resume Library"],
+        "summary": "Refresh resume library entry",
+        "description": "Re-runs Fix Resume for the linked student/job using stored atsImprovements, then Gemini re-scores the result (target 90+).",
+        "operationId": "refreshResumeLibrary",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Refreshed resume",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resume": { "$ref": "#/components/schemas/ResumeLibraryItem" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/jobs/{id}/fix-resume": {
       "post": {
         "tags": ["Resume"],
         "summary": "Fix resume for job",
-        "description": "Uses Gemini to tailor the student's resume JSON to this job, saves it via the Nexus Partners student API, and records resumeFixedAt on the student-job action.",
+        "description": "Uses Gemini to tailor the student's resume JSON to this job (optionally guided by atsImprovements), saves it, records resumeFixedAt, upserts a Resume Library entry, and Gemini-scores ATS (target 90+).",
         "operationId": "fixResume",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -777,7 +1860,7 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/StudentPhoneBody" }
+              "schema": { "$ref": "#/components/schemas/FixResumeBody" }
             }
           }
         },
@@ -801,7 +1884,7 @@
       "post": {
         "tags": ["Resume"],
         "summary": "Download ATS resume for job",
-        "description": "Builds a job-specific ATS resume PDF via the Nexus Partners resume build API. Optionally pass templateId.",
+        "description": "Builds a job-specific ATS resume PDF via the Nexus Partners resume build API. Optionally pass templateId. Also upserts a Resume Library entry.",
         "operationId": "downloadAtsResume",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -827,6 +1910,69 @@
           "400": { "description": "studentPhone required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "403": { "description": "Student not assigned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Job not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/settings": {
+      "patch": {
+        "tags": ["Settings"],
+        "summary": "Update recruiter profile",
+        "description": "Update name, email, and/or phone on the logged-in recruiter account.",
+        "operationId": "updateSettings",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateSettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UpdateSettingsResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/settings/password": {
+      "post": {
+        "tags": ["Settings"],
+        "summary": "Change recruiter password",
+        "operationId": "changePassword",
+        "security": [{ "RecruiterBearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing fields or weak password", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized or wrong current password", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "500": { "description": "Server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }

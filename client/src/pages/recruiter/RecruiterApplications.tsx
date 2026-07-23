@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Briefcase,
@@ -8,11 +8,16 @@ import {
   MapPin,
   Search,
 } from 'lucide-react';
+import { DateRangeCalendar } from '@/components/recruiter/DateRangeCalendar';
+import { ExperienceRangeSlider } from '@/components/recruiter/ExperienceRangeSlider';
 import { recruiterJobsApi, recruiterStudentsApi } from '@/lib/recruiterApi';
+import { toast } from '@/lib/toast';
 import type { RecruiterScrapedJob, RecruiterStudent } from '@/types/recruiterPortal';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 20;
+const EXP_FLOOR = 0;
+const EXP_CEILING = 15;
 
 function formatDate(value: string | null) {
   if (!value) return '—';
@@ -30,7 +35,8 @@ function JobCard({
   job: RecruiterScrapedJob;
   studentPhone: string;
 }) {
-  const status = job.studentAction?.status;
+  const isApplied = job.isApplied ?? job.studentAction?.status === 'applied';
+  const isSponsored = job.isSponsored ?? job.visaSponsorship;
 
   return (
     <Link
@@ -42,11 +48,18 @@ function JobCard({
           <h3 className="font-semibold text-heading">{job.jobTitle}</h3>
           <p className="mt-0.5 text-sm text-body">{job.companyName}</p>
         </div>
-        {status === 'applied' && (
-          <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-            Applied
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {isSponsored && (
+            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+              Sponsored
+            </span>
+          )}
+          {isApplied && (
+            <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+              Applied
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-body">
@@ -57,7 +70,6 @@ function JobCard({
           </span>
         )}
         {job.datePosted && <span>Posted {formatDate(job.datePosted)}</span>}
-        {job.urlDomain && <span>{job.urlDomain}</span>}
         {job.remote && <span className="text-primary">Remote</span>}
       </div>
 
@@ -78,9 +90,14 @@ export default function RecruiterApplications() {
   const [jobQuery, setJobQuery] = useState('');
   const [scrapedFrom, setScrapedFrom] = useState('');
   const [scrapedTo, setScrapedTo] = useState('');
+  const [expMin, setExpMin] = useState(EXP_FLOOR);
+  const [expMax, setExpMax] = useState(EXP_CEILING);
+  const [expFilterActive, setExpFilterActive] = useState(false);
+  const [sponsoredFilter, setSponsoredFilter] = useState<'any' | 'yes' | 'no'>('any');
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingJobs, setLoadingJobs] = useState(false);
-  const [error, setError] = useState('');
+  const [filteringJobs, setFilteringJobs] = useState(false);
+  const showFullLoaderRef = useRef(true);
 
   const loadStudents = useCallback(async (q = '') => {
     setLoadingStudents(true);
@@ -91,7 +108,7 @@ export default function RecruiterApplications() {
         setSelectedPhone(data.students[0].phone);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load students');
+      toast.error(err instanceof Error ? err.message : 'Failed to load students');
     } finally {
       setLoadingStudents(false);
     }
@@ -101,10 +118,12 @@ export default function RecruiterApplications() {
     if (!selectedPhone) {
       setJobs([]);
       setTotal(0);
+      showFullLoaderRef.current = true;
       return;
     }
-    setLoadingJobs(true);
-    setError('');
+    const fullLoader = showFullLoaderRef.current;
+    if (fullLoader) setLoadingJobs(true);
+    else setFilteringJobs(true);
     try {
       const data = await recruiterJobsApi.list({
         studentPhone: selectedPhone,
@@ -113,15 +132,42 @@ export default function RecruiterApplications() {
         q: jobQuery,
         scrapedFrom: scrapedFrom || undefined,
         scrapedTo: scrapedTo || undefined,
+        ...(expFilterActive
+          ? {
+              minExp: expMin,
+              maxExp: expMax,
+            }
+          : {}),
+        ...(sponsoredFilter === 'yes'
+          ? { sponsored: true }
+          : sponsoredFilter === 'no'
+            ? { sponsored: false }
+            : {}),
       });
       setJobs(data.jobs);
       setTotal(data.total);
+      showFullLoaderRef.current = false;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load jobs');
+      toast.error(err instanceof Error ? err.message : 'Failed to load jobs');
     } finally {
       setLoadingJobs(false);
+      setFilteringJobs(false);
     }
-  }, [selectedPhone, page, jobQuery, scrapedFrom, scrapedTo]);
+  }, [
+    selectedPhone,
+    page,
+    jobQuery,
+    scrapedFrom,
+    scrapedTo,
+    expMin,
+    expMax,
+    expFilterActive,
+    sponsoredFilter,
+  ]);
+
+  useEffect(() => {
+    showFullLoaderRef.current = true;
+  }, [selectedPhone]);
 
   useEffect(() => {
     loadStudents();
@@ -147,12 +193,6 @@ export default function RecruiterApplications() {
           Select a student to view matched job openings
         </p>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <aside className="np-card flex flex-col overflow-hidden p-0">
@@ -236,41 +276,76 @@ export default function RecruiterApplications() {
           )}
 
           <div className="np-card p-4">
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-end gap-4">
               <div className="relative min-w-[200px] flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-body" />
-                <input
-                  type="search"
-                  placeholder="Search jobs..."
-                  className="np-input !pl-9 !py-2 text-sm"
-                  value={jobQuery}
+                <label className="mb-1 block text-xs font-medium text-body">Search</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-body" />
+                  <input
+                    type="search"
+                    placeholder="Search jobs..."
+                    className="np-input !pl-9 !py-2 text-sm"
+                    value={jobQuery}
+                    onChange={(e) => {
+                      setJobQuery(e.target.value);
+                      setPage(0);
+                    }}
+                  />
+                </div>
+              </div>
+
+              <DateRangeCalendar
+                className="min-w-[240px] flex-1 sm:max-w-xs"
+                from={scrapedFrom}
+                to={scrapedTo}
+                onChange={({ from, to }) => {
+                  setScrapedFrom(from);
+                  setScrapedTo(to);
+                  setPage(0);
+                }}
+              />
+
+              <ExperienceRangeSlider
+                className="min-w-[220px] flex-1 sm:max-w-sm"
+                min={EXP_FLOOR}
+                max={EXP_CEILING}
+                step={1}
+                valueMin={expMin}
+                valueMax={expMax}
+                isAny={!expFilterActive}
+                onCommit={({ min, max }) => {
+                  setExpMin(min);
+                  setExpMax(max);
+                  setExpFilterActive(true);
+                  setPage(0);
+                }}
+                onClear={() => {
+                  setExpMin(EXP_FLOOR);
+                  setExpMax(EXP_CEILING);
+                  setExpFilterActive(false);
+                  setPage(0);
+                }}
+              />
+
+              <div className="min-w-[140px]">
+                <label className="mb-1 block text-xs font-medium text-body">Sponsored</label>
+                <select
+                  className="np-input !py-2 text-sm"
+                  value={sponsoredFilter}
                   onChange={(e) => {
-                    setJobQuery(e.target.value);
+                    setSponsoredFilter(e.target.value as 'any' | 'yes' | 'no');
                     setPage(0);
                   }}
-                />
+                >
+                  <option value="any">Any</option>
+                  <option value="yes">Sponsored only</option>
+                  <option value="no">Not sponsored</option>
+                </select>
               </div>
-              <input
-                type="date"
-                className="np-input !py-2 text-sm"
-                value={scrapedFrom}
-                onChange={(e) => {
-                  setScrapedFrom(e.target.value);
-                  setPage(0);
-                }}
-                title="Scraped from"
-              />
-              <input
-                type="date"
-                className="np-input !py-2 text-sm"
-                value={scrapedTo}
-                onChange={(e) => {
-                  setScrapedTo(e.target.value);
-                  setPage(0);
-                }}
-                title="Scraped to"
-              />
             </div>
+            {filteringJobs && (
+              <p className="mt-2 text-xs text-body">Updating results…</p>
+            )}
           </div>
 
           {loadingJobs ? (

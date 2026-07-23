@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Briefcase, LogOut, Users } from 'lucide-react';
+import { Briefcase, FileText, LogOut, Users } from 'lucide-react';
 import { useRecruiterAuth } from '@/context/RecruiterAuthContext';
 import { AppLogo } from '@/components/ui/AppLogo';
 import { cn } from '@/lib/utils';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 const NAV = [
   { to: '/recruiter-portal/applications', label: 'Applications', icon: Briefcase },
   { to: '/recruiter-portal/students', label: 'My Students', icon: Users },
+  { to: '/recruiter-portal/resume-library', label: 'Resume Library', icon: FileText },
 ];
 
 export function RecruiterLayout() {

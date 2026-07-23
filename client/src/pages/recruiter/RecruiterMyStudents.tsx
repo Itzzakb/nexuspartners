@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Mail, MapPin, Phone, Search, User } from 'lucide-react';
 import { recruiterStudentsApi } from '@/lib/recruiterApi';
+import { toast } from '@/lib/toast';
 import type { RecruiterStudent } from '@/types/recruiterPortal';
 import { cn } from '@/lib/utils';
 
@@ -9,7 +10,6 @@ export default function RecruiterMyStudents() {
   const [students, setStudents] = useState<RecruiterStudent[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -17,9 +17,8 @@ export default function RecruiterMyStudents() {
       try {
         const data = await recruiterStudentsApi.list(query);
         setStudents(data.students);
-        setError('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load students');
+        toast.error(err instanceof Error ? err.message : 'Failed to load students');
       } finally {
         setLoading(false);
       }
@@ -45,12 +44,6 @@ export default function RecruiterMyStudents() {
           />
         </div>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="flex justify-center py-20">

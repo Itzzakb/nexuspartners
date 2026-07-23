@@ -4,6 +4,7 @@ import type { Interview } from '@/types/phase4';
 import { INTERVIEW_STAGE_LABELS } from '@/types/phase4';
 import { cn } from '@/lib/utils';
 import { Toggle } from '@/components/ui/Toggle';
+import { toPublicAppUrl } from '@/lib/publicAppUrl';
 
 const stageColors: Record<string, string> = {
   interview_reported: 'bg-blue-100 text-blue-800',
@@ -79,7 +80,7 @@ export function InterviewCard({ interview, selected, onSelect, showCheckbox }: I
 
         {interview.shareLink && (
           <a
-            href={interview.shareLink}
+            href={toPublicAppUrl(interview.shareLink)}
             target="_blank"
             rel="noreferrer"
             className="text-body hover:text-heading"

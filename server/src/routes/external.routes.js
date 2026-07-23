@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   proxyStudents,
   proxyCompanyMembers,
+  getRecruiter,
   proxyStudentDetails,
   proxyJobRoles,
   createRecruiter,
@@ -17,6 +18,7 @@ router.post('/students', proxyStudents);
 router.post('/student-details', proxyStudentDetails);
 router.get('/job-roles', proxyJobRoles);
 router.post('/recruiters', proxyCompanyMembers);
+router.get('/recruiters/:username', getRecruiter);
 router.post('/recruiters/create', createRecruiter);
 router.post('/recruiters/update', updateRecruiter);
 

@@ -6,7 +6,7 @@ import {
   canAccessCompany,
   interviewToJSON,
   buildInterviewShareLink,
-} from '../utils/phase4.helpers.js';
+} from '../utils/staffPortalHelpers.js';
 import { emitTicketEvent } from '../services/socket.service.js';
 
 function buildInterviewFilter(query, user) {
@@ -47,7 +47,7 @@ export async function listInterviews(req, res) {
 
     return res.json({
       interviews: items.map((i) =>
-        interviewToJSON(i, { shareLink: buildInterviewShareLink(i.shareToken) })
+        interviewToJSON(i, { shareLink: buildInterviewShareLink(i.shareToken, req) })
       ),
     });
   } catch (err) {
@@ -87,7 +87,7 @@ export async function getInterview(req, res) {
       return res.status(403).json({ error: 'Access denied' });
     }
     return res.json({
-      interview: interviewToJSON(item, { shareLink: buildInterviewShareLink(item.shareToken) }),
+      interview: interviewToJSON(item, { shareLink: buildInterviewShareLink(item.shareToken, req) }),
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to get interview' });
@@ -138,7 +138,7 @@ export async function createInterview(req, res) {
     });
 
     const populated = await Interview.findById(item._id).populate('companyId', 'name');
-    const json = interviewToJSON(populated, { shareLink: buildInterviewShareLink(item.shareToken) });
+    const json = interviewToJSON(populated, { shareLink: buildInterviewShareLink(item.shareToken, req) });
     emitInterview(company._id.toString(), 'interview:created', { interview: json });
 
     return res.status(201).json({ interview: json });
@@ -171,7 +171,7 @@ export async function updateInterview(req, res) {
 
     await item.save();
     const populated = await Interview.findById(item._id).populate('companyId', 'name');
-    const json = interviewToJSON(populated, { shareLink: buildInterviewShareLink(item.shareToken) });
+    const json = interviewToJSON(populated, { shareLink: buildInterviewShareLink(item.shareToken, req) });
     emitInterview(item.companyId.toString(), 'interview:updated', { interview: json });
     return res.json({ interview: json });
   } catch (err) {

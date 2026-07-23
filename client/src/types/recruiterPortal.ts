@@ -26,17 +26,70 @@ export interface RecruiterStudent {
   name: string;
   email: string;
   role: string;
+  targetRole?: string;
   location: string;
+  city?: string;
+  state?: string;
   isActive: boolean;
+  resumeStatus?: 'ready' | 'pending' | 'draft';
+  subscriptionStatus?: string;
+  subscriptionStatusLabel?: string;
+  applicationCount?: number;
+  nextDueDate?: string | null;
   companyId: string;
 }
 
+export type ApplicationStatus =
+  | 'saved'
+  | 'applied'
+  | 'interview_scheduled'
+  | 'interview_completed'
+  | 'offer_received'
+  | 'hired'
+  | 'rejected'
+  | 'dropped';
+
 export interface StudentJobAction {
-  status: 'saved' | 'applied' | 'dropped';
+  id?: string;
+  status: ApplicationStatus;
+  statusLabel?: string;
   appliedAt: string | null;
   droppedAt: string | null;
+  statusUpdatedAt?: string | null;
   resumeFixedAt?: string | null;
   atsResumeUrl?: string;
+  notes?: string;
+}
+
+export interface RecruiterApplication {
+  id: string;
+  status: ApplicationStatus;
+  statusLabel: string;
+  studentPhone: string;
+  studentName: string;
+  companyName: string;
+  jobTitle: string;
+  jobId: string;
+  source: string;
+  sourceRaw: string;
+  location: string;
+  remote: boolean;
+  hybrid: boolean;
+  salaryRange: string;
+  appliedAt: string | null;
+  droppedAt: string | null;
+  statusUpdatedAt: string | null;
+  resumeFixedAt: string | null;
+  atsResumeUrl: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  job?: ScrapedJob | null;
+}
+
+export interface ApplicationStatusOption {
+  value: ApplicationStatus;
+  label: string;
 }
 
 export interface RecruiterResumeTemplate {
@@ -48,6 +101,15 @@ export interface RecruiterResumeTemplate {
 
 export interface RecruiterScrapedJob extends ScrapedJob {
   verified?: boolean;
+  sourceLabel?: string;
+  salaryRange?: string;
+  postedAge?: string;
+  workType?: string;
+  visaSponsorship?: boolean;
+  isSponsored?: boolean;
+  isApplied?: boolean;
+  tags?: string[];
+  metaLine?: string;
   studentAction?: StudentJobAction | null;
 }
 

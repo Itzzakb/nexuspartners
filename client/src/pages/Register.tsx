@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { companyApi, type Company } from '@/lib/api';
 import { AppLogo } from '@/components/ui/AppLogo';
+import { toast } from '@/lib/toast';
 
 export default function Register() {
   const { register } = useAuth();
@@ -16,7 +17,6 @@ export default function Register() {
     role: 'mentor',
     companyId: '',
   });
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function Register() {
         }
       })
       .catch((err) => {
-        setError(
+        toast.error(
           err instanceof Error
             ? `Could not load companies: ${err.message}. Is the API running on port 4600?`
             : 'Failed to load companies'
@@ -39,13 +39,12 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
     try {
       await register(form);
       navigate('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      toast.error(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -61,12 +60,6 @@ export default function Register() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
           <div>
             <label className="mb-1.5 block text-sm font-medium text-heading">Full name</label>
             <input

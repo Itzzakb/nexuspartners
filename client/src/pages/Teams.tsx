@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { teamApi, externalApi } from '@/lib/api';
 import type { Team, TeamMember, ExternalRecruiter } from '@/types/phase4';
+import { toast } from '@/lib/toast';
 
 export default function Teams() {
   const { user } = useAuth();
@@ -23,7 +24,6 @@ export default function Teams() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [memberPick, setMemberPick] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const canManage = user?.isCompanyAdmin || user?.isPlatformAdmin;
 
@@ -65,7 +65,6 @@ export default function Teams() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
     try {
       await teamApi.create({ ...form, members });
       setShowForm(false);
@@ -79,7 +78,7 @@ export default function Teams() {
       setMembers([]);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create team');
+      toast.error(err instanceof Error ? err.message : 'Failed to create team');
     } finally {
       setSaving(false);
     }
@@ -119,7 +118,6 @@ export default function Teams() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="np-card space-y-4 p-6">
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <input className="np-input" placeholder="Team name *" required value={form.teamName}
               onChange={(e) => setForm({ ...form, teamName: e.target.value })} />

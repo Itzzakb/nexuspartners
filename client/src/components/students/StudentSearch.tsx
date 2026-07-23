@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search } from 'lucide-react';
 import { externalApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import type { ExternalStudent } from '@/types/phase4';
 
 interface StudentSearchProps {
@@ -20,17 +21,15 @@ export function StudentSearch({ companyId, onSelect, placeholder }: StudentSearc
   const [students, setStudents] = useState<ExternalStudent[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState('');
 
   const loadStudents = async () => {
     setLoading(true);
-    setError('');
     try {
       const data = await externalApi.students(companyId);
       setStudents(data.students || []);
       setOpen(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load students');
+      toast.error(err instanceof Error ? err.message : 'Failed to load students');
       setStudents([]);
     } finally {
       setLoading(false);
@@ -66,8 +65,6 @@ export function StudentSearch({ companyId, onSelect, placeholder }: StudentSearc
           {loading ? 'Loading...' : 'Load'}
         </button>
       </div>
-
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
 
       {open && filtered.length > 0 && (
         <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">

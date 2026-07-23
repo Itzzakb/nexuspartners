@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { permissionApi, userApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { MODULE_KEYS } from '@/lib/permissions';
 import { Toggle, ToggleField } from '@/components/ui/Toggle';
 import type { PermissionTemplate } from '@/types/phase6';
@@ -15,8 +16,6 @@ export default function UserAccess() {
   const [companyId, setCompanyId] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [templatePerms, setTemplatePerms] = useState<Record<string, boolean>>({});
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
   const load = async () => {
     const [userData, templateData] = await Promise.all([
@@ -42,7 +41,6 @@ export default function UserAccess() {
 
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     try {
       await permissionApi.createTemplate({
         name: templateName,
@@ -50,20 +48,20 @@ export default function UserAccess() {
         companyId: companyId || undefined,
       });
       setTemplateName('');
-      setMessage('Template created');
+      toast.success('Template created');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create template');
+      toast.error(err instanceof Error ? err.message : 'Failed to create template');
     }
   };
 
   const handleApplyTemplate = async (userId: string, templateId: string) => {
     try {
       await permissionApi.updateUser(userId, { permissionTemplateId: templateId });
-      setMessage('Permissions updated');
+      toast.success('Permissions updated');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update user');
+      toast.error(err instanceof Error ? err.message : 'Failed to update user');
     }
   };
 
@@ -87,9 +85,6 @@ export default function UserAccess() {
           {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       )}
-
-      {message && <p className="text-sm text-green-700">{message}</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
 
       <form onSubmit={handleCreateTemplate} className="np-card space-y-4 p-6">
         <h2 className="text-lg">Create permission template</h2>

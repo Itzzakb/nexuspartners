@@ -8,6 +8,7 @@ import {
   signRefreshToken,
 } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../services/sendgrid.service.js';
+import { getClientBaseUrl } from '../utils/publicUrls.js';
 
 const SALT_ROUNDS = 12;
 
@@ -199,7 +200,9 @@ export async function me(req, res) {
       documents: company.documents,
       razorpay: company.razorpay,
       billRatePerDay: company.billRatePerDay,
+      billingCurrency: company.billingCurrency || company.salaryCurrency || 'INR',
       salaryCurrency: company.salaryCurrency,
+      paymentTypes: company.paymentTypes,
       createStudentPassword: company.createStudentPassword,
     },
   });
@@ -222,7 +225,7 @@ export async function forgotPassword(req, res) {
     user.resetPasswordExpires = new Date(Date.now() + 3600000);
     await user.save();
 
-    const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
+    const resetUrl = `${getClientBaseUrl(req)}/reset-password?token=${token}`;
     await sendPasswordResetEmail(user.email, resetUrl);
 
     return res.json({ message: 'If that email exists, a reset link has been sent.' });

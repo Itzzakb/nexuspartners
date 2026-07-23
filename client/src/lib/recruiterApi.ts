@@ -9,6 +9,9 @@ import type {
   RecruiterJobApplicant,
   StudentActivity,
   RecruiterResumeTemplate,
+  RecruiterApplication,
+  ApplicationStatus,
+  ApplicationStatusOption,
 } from '@/types/recruiterPortal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -100,10 +103,18 @@ export const recruiterAuthApi = {
 };
 
 export const recruiterStudentsApi = {
-  list: (q = '') =>
-    recruiterApi<{ students: RecruiterStudent[]; total: number }>(
-      `/students${q ? `?q=${encodeURIComponent(q)}` : ''}`
-    ),
+  list: (params: { q?: string; subscriptionStatus?: string; sort?: string } | string = '') => {
+    const opts =
+      typeof params === 'string' ? { q: params } : params || {};
+    const qs = new URLSearchParams();
+    if (opts.q) qs.set('q', opts.q);
+    if (opts.subscriptionStatus) qs.set('subscriptionStatus', opts.subscriptionStatus);
+    if (opts.sort) qs.set('sort', opts.sort);
+    const query = qs.toString();
+    return recruiterApi<{ students: RecruiterStudent[]; total: number; assignedCount: number }>(
+      `/students${query ? `?${query}` : ''}`
+    );
+  },
 
   get: (phone: string) =>
     recruiterApi<{ student: RecruiterStudentDetail }>(`/students/${encodeURIComponent(phone)}`),
@@ -112,6 +123,26 @@ export const recruiterStudentsApi = {
     recruiterApi<{ activity: StudentActivity }>(
       `/students/${encodeURIComponent(phone)}/activity`
     ),
+
+  /** Student-filled resume form details for apply copy/paste panel */
+  getResumeForm: (phone: string) =>
+    recruiterApi<{
+      hasForm: boolean;
+      studentPhone: string;
+      studentName: string;
+      studentEmail: string;
+      ticket: {
+        id: string;
+        ticketNumber: string;
+        candidateName: string;
+        resumeFormStatus: string;
+        updatedAt: string;
+      } | null;
+      rows: Array<{ label: string; value: string }>;
+      fields: Array<{ key: string; label: string; value: string }>;
+      formData: Record<string, unknown> | null;
+      message?: string;
+    }>(`/students/${encodeURIComponent(phone)}/resume-form`),
 
   updateNotes: (phone: string, notes: string) =>
     recruiterApi<{ notes: string }>(`/students/${encodeURIComponent(phone)}/notes`, {
@@ -133,6 +164,11 @@ export const recruiterJobsApi = {
     q?: string;
     scrapedFrom?: string;
     scrapedTo?: string;
+    source?: string;
+    remote?: boolean;
+    minExp?: number;
+    maxExp?: number;
+    sponsored?: boolean;
   }) => {
     const qs = new URLSearchParams();
     qs.set('studentPhone', params.studentPhone);
@@ -141,6 +177,11 @@ export const recruiterJobsApi = {
     if (params.q) qs.set('q', params.q);
     if (params.scrapedFrom) qs.set('scrapedFrom', params.scrapedFrom);
     if (params.scrapedTo) qs.set('scrapedTo', params.scrapedTo);
+    if (params.source) qs.set('source', params.source);
+    if (params.remote !== undefined) qs.set('remote', String(params.remote));
+    if (params.minExp !== undefined) qs.set('minExp', String(params.minExp));
+    if (params.maxExp !== undefined) qs.set('maxExp', String(params.maxExp));
+    if (params.sponsored !== undefined) qs.set('sponsored', String(params.sponsored));
     return recruiterApi<{
       jobs: RecruiterScrapedJob[];
       total: number;
@@ -161,21 +202,48 @@ export const recruiterJobsApi = {
     }),
 
   apply: (id: string, studentPhone: string) =>
-    recruiterApi<{ success: boolean; applyUrl: string }>(`/jobs/${id}/apply`, {
+    recruiterApi<{
+      success: boolean;
+      applyUrl: string;
+      job?: { id: string; jobTitle: string; companyName: string };
+      action: { id?: string; status: string; statusLabel?: string; appliedAt: string | null };
+      studentForm?: {
+        hasForm: boolean;
+        studentPhone: string;
+        studentName: string;
+        studentEmail: string;
+        ticket: Record<string, unknown> | null;
+        rows: Array<{ label: string; value: string }>;
+        fields: Array<{ key: string; label: string; value: string }>;
+        formData: Record<string, unknown> | null;
+        message?: string;
+      } | null;
+    }>(`/jobs/${id}/apply`, {
       method: 'POST',
       body: JSON.stringify({ studentPhone }),
     }),
 
-  fixResume: (id: string, studentPhone: string) =>
+  fixResume: (id: string, studentPhone: string, improvements?: string[]) =>
     recruiterApi<{
       success: boolean;
       resume: Record<string, unknown>;
       source: string;
       mock?: boolean;
+      libraryEntry?: {
+        id: string;
+        atsScore: number | null;
+        atsSummary?: string;
+        atsImprovements?: string[];
+        atsMeetsTarget?: boolean;
+        atsTargetScore?: number;
+      };
       action: { resumeFixedAt: string | null; status: string };
     }>(`/jobs/${id}/fix-resume`, {
       method: 'POST',
-      body: JSON.stringify({ studentPhone }),
+      body: JSON.stringify({
+        studentPhone,
+        ...(improvements?.length ? { improvements } : {}),
+      }),
     }),
 
   downloadAtsResume: (id: string, studentPhone: string, templateId?: string) =>
@@ -183,9 +251,56 @@ export const recruiterJobsApi = {
       success: boolean;
       downloadUrl: string;
       mock?: boolean;
+      libraryEntry?: {
+        id: string;
+        atsScore: number | null;
+        atsSummary?: string;
+        atsImprovements?: string[];
+        atsMeetsTarget?: boolean;
+        atsTargetScore?: number;
+      };
     }>(`/jobs/${id}/download-ats-resume`, {
       method: 'POST',
       body: JSON.stringify({ studentPhone, templateId }),
+    }),
+};
+
+export const recruiterApplicationsApi = {
+  list: (params: {
+    status?: string;
+    studentPhone?: string;
+    q?: string;
+    page?: number;
+    limit?: number;
+  } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.studentPhone) qs.set('studentPhone', params.studentPhone);
+    if (params.q) qs.set('q', params.q);
+    if (params.page !== undefined) qs.set('page', String(params.page));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return recruiterApi<{
+      applications: RecruiterApplication[];
+      total: number;
+      page: number;
+      limit: number;
+      statuses: ApplicationStatusOption[];
+    }>(`/applications${query ? `?${query}` : ''}`);
+  },
+
+  statuses: () =>
+    recruiterApi<{ statuses: ApplicationStatusOption[] }>('/applications/statuses'),
+
+  get: (id: string) =>
+    recruiterApi<{ application: RecruiterApplication; student: RecruiterStudent | null }>(
+      `/applications/${id}`
+    ),
+
+  updateStatus: (id: string, status: ApplicationStatus, notes?: string) =>
+    recruiterApi<{ application: RecruiterApplication }>(`/applications/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, notes }),
     }),
 };
 
@@ -199,4 +314,107 @@ export const recruiterResumeApi = {
       `/students/${encodeURIComponent(phone)}/resume/download${qs}`
     );
   },
+
+  listLibrary: (params: { q?: string; studentPhone?: string; page?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.studentPhone) qs.set('studentPhone', params.studentPhone);
+    if (params.page !== undefined) qs.set('page', String(params.page));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return recruiterApi<{
+      resumes: Array<{
+        id: string;
+        studentPhone: string;
+        studentName: string;
+        jobTitle: string;
+        companyName: string;
+        downloadUrl: string;
+        atsScore: number | null;
+        atsSummary?: string;
+        atsImprovements?: string[];
+        atsMeetsTarget?: boolean;
+        atsTargetScore?: number;
+        atsScoredAt?: string | null;
+        source: string;
+        createdAt: string;
+      }>;
+      total: number;
+    }>(`/resume-library${query ? `?${query}` : ''}`);
+  },
+
+  getLibrary: (id: string) =>
+    recruiterApi<{ resume: Record<string, unknown> }>(`/resume-library/${id}`),
+
+  refreshLibrary: (id: string) =>
+    recruiterApi<{
+      resume: {
+        id: string;
+        atsScore: number | null;
+        atsSummary?: string;
+        atsImprovements?: string[];
+        atsMeetsTarget?: boolean;
+        atsTargetScore?: number;
+        [key: string]: unknown;
+      };
+    }>(`/resume-library/${id}/refresh`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  deleteLibrary: (id: string) =>
+    recruiterApi<{ success: boolean }>(`/resume-library/${id}`, { method: 'DELETE' }),
+};
+
+export const recruiterDashboardApi = {
+  get: (range: '7d' | '30d' | '90d' = '7d') =>
+    recruiterApi<{
+      kpis: Record<string, number>;
+      trend: { range: string; points: Array<{ date: string; count: number }> };
+      recentActivity: Array<{ type: string; text: string; at: string }>;
+    }>(`/dashboard?range=${range}`),
+};
+
+export const recruiterAnalyticsApi = {
+  get: () => recruiterApi<Record<string, unknown>>('/analytics'),
+};
+
+export const recruiterSearchApi = {
+  search: (q: string) =>
+    recruiterApi<{ students: RecruiterStudent[]; jobs: RecruiterScrapedJob[]; applications: RecruiterApplication[] }>(
+      `/search?q=${encodeURIComponent(q)}`
+    ),
+};
+
+export const recruiterInterviewsApi = {
+  list: (params: { status?: string; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.q) qs.set('q', params.q);
+    const query = qs.toString();
+    return recruiterApi<{ interviews: Array<Record<string, unknown>>; total: number }>(
+      `/interviews${query ? `?${query}` : ''}`
+    );
+  },
+};
+
+export const recruiterSettingsApi = {
+  update: (payload: { name?: string; email?: string; phone?: string }) =>
+    recruiterApi<{ recruiter: RecruiterAccount }>('/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    recruiterApi<{ success: boolean }>('/settings/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+};
+
+export const recruiterNotificationsApi = {
+  list: () =>
+    recruiterApi<{
+      notifications: Array<{ id: string; type: string; text: string; createdAt: string; read: boolean }>;
+      unreadCount: number;
+    }>('/notifications'),
 };

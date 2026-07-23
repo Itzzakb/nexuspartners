@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { promptApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import type { AppPrompt } from '@/types/phase7';
 
 export default function PromptEditor() {
@@ -10,8 +11,7 @@ export default function PromptEditor() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -22,7 +22,7 @@ export default function PromptEditor() {
       data.prompts.forEach((p) => { initial[p.key] = p.content; });
       setDrafts(initial);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load prompts');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load prompts');
     } finally {
       setLoading(false);
     }
@@ -38,14 +38,12 @@ export default function PromptEditor() {
 
   const handleSave = async (key: string) => {
     setSaving(key);
-    setError('');
-    setMessage('');
     try {
       await promptApi.update(key, { content: drafts[key] });
-      setMessage(`Saved "${key}"`);
+      toast.success(`Saved "${key}"`);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setSaving(null);
     }
@@ -58,19 +56,12 @@ export default function PromptEditor() {
         <p className="mt-1 text-body">Edit Gemini and ATS prompts used across the platform</p>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
+      ) : loadError ? (
+        <p className="text-body">{loadError}</p>
       ) : (
         <div className="space-y-6">
           {prompts.map((p) => (

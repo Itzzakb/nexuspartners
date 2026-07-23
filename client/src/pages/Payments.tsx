@@ -5,8 +5,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { paymentApi } from '@/lib/api';
 import type { PaymentRecord } from '@/types/payment';
-import { PAYMENT_METHOD_LABELS } from '@/types/payment';
+import { PAYMENT_METHOD_LABELS, PAYMENT_CURRENCIES } from '@/types/payment';
 import { cn } from '@/lib/utils';
+import { toast } from '@/lib/toast';
 
 const statusColors: Record<string, string> = {
   paid: 'bg-green-100 text-green-800',
@@ -26,13 +27,14 @@ export default function Payments() {
   const [status, setStatus] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const billingCurrency = company?.billingCurrency || company?.salaryCurrency || 'INR';
+
   const [form, setForm] = useState({
     studentName: '',
     studentPhone: '',
     studentEmail: '',
     amount: '',
-    currency: company?.salaryCurrency || 'INR',
+    currency: billingCurrency,
     paymentMethod: 'cash',
     paymentType: 'other',
     description: '',
@@ -64,10 +66,17 @@ export default function Payments() {
     load();
   }, [companyId, status]);
 
+  useEffect(() => {
+    if (!showForm) return;
+    setForm((prev) => ({
+      ...prev,
+      currency: company?.billingCurrency || company?.salaryCurrency || 'INR',
+    }));
+  }, [showForm, company?.billingCurrency, company?.salaryCurrency]);
+
   const handleManual = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
     try {
       const amount = Math.round(parseFloat(form.amount) * 100);
       await paymentApi.createManual({
@@ -82,7 +91,7 @@ export default function Payments() {
         studentPhone: '',
         studentEmail: '',
         amount: '',
-        currency: company?.salaryCurrency || 'INR',
+        currency: billingCurrency,
         paymentMethod: 'cash',
         paymentType: 'other',
         description: '',
@@ -90,7 +99,7 @@ export default function Payments() {
       });
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to record payment');
+      toast.error(err instanceof Error ? err.message : 'Failed to record payment');
     } finally {
       setSaving(false);
     }
@@ -99,7 +108,7 @@ export default function Payments() {
   const collectedFormatted = stats
     ? new Intl.NumberFormat('en-IN', {
         style: 'currency',
-        currency: company?.salaryCurrency || 'INR',
+        currency: billingCurrency,
       }).format(stats.totalCollected / 100)
     : '—';
 
@@ -161,7 +170,6 @@ export default function Payments() {
 
       {showForm && (
         <form onSubmit={handleManual} className="np-card space-y-4 p-6">
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <h2 className="text-lg">Record manual payment</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <input className="np-input" placeholder="Student name *" required value={form.studentName}
@@ -172,6 +180,18 @@ export default function Payments() {
               onChange={(e) => setForm({ ...form, studentEmail: e.target.value })} />
             <input className="np-input" type="number" step="0.01" placeholder="Amount *" required value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-heading">Currency</label>
+              <select
+                className="np-input w-full"
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+              >
+                {PAYMENT_CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.label}</option>
+                ))}
+              </select>
+            </div>
             <select className="np-input" value={form.paymentMethod}
               onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
               {paymentTypes.map((t) => (

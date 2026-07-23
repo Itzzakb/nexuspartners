@@ -3,6 +3,7 @@ import { Calculator } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { billingApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import type { BillingLine, BillingSummary } from '@/types/phase6';
 
 export default function GenerateBilling() {
@@ -15,21 +16,17 @@ export default function GenerateBilling() {
   const [preview, setPreview] = useState<{ summary: BillingSummary; lines: BillingLine[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
   const billRate = company?.billRatePerDay ?? 4;
-  const currency = company?.salaryCurrency || 'INR';
+  const currency = company?.billingCurrency || company?.salaryCurrency || 'INR';
 
   const loadPreview = async () => {
     setLoading(true);
-    setError('');
-    setMessage('');
     try {
       const data = await billingApi.preview(year, month, companyId || undefined);
       setPreview(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Preview failed');
+      toast.error(err instanceof Error ? err.message : 'Preview failed');
       setPreview(null);
     } finally {
       setLoading(false);
@@ -42,7 +39,6 @@ export default function GenerateBilling() {
 
   const handleGenerate = async (finalize: boolean) => {
     setGenerating(true);
-    setError('');
     try {
       const data = await billingApi.generate({
         year,
@@ -50,10 +46,10 @@ export default function GenerateBilling() {
         companyId: companyId || undefined,
         finalize,
       });
-      setMessage(`Generated ${data.records.length} records (batch ${data.batchId.slice(0, 8)}…)`);
+      toast.success(`Generated ${data.records.length} records (batch ${data.batchId.slice(0, 8)}…)`);
       loadPreview();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generate failed');
+      toast.error(err instanceof Error ? err.message : 'Generate failed');
     } finally {
       setGenerating(false);
     }
@@ -98,13 +94,6 @@ export default function GenerateBilling() {
           Finalize billing
         </button>
       </div>
-
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div>
-      )}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
 
       {preview && (
         <div className="grid gap-4 sm:grid-cols-4">

@@ -6,7 +6,19 @@ export interface StudentListItem {
   companyLabel: string;
   paymentCount: number;
   hasActiveSubscription: boolean;
+  role?: string;
+  status?: 'active' | 'inactive' | 'suspended' | string;
+  recruiter?: string;
+  subscriptionDays?: number;
+  hasResume?: boolean;
   raw?: Record<string, unknown>;
+}
+
+export interface StudentListStats {
+  all: number;
+  active: number;
+  inactive: number;
+  suspended: number;
 }
 
 export interface StudentDetail {
@@ -29,6 +41,10 @@ export interface StudentInterviewRef {
   interviewNumber: string;
   candidateName: string;
   currentStage: string;
+  position?: string;
+  companyName?: string;
+  interviewDateTime?: string | null;
+  isCancelled?: boolean;
 }
 
 export interface ResumeTemplate {

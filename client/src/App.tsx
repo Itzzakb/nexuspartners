@@ -5,6 +5,7 @@ import { CompanyProvider } from '@/context/CompanyContext';
 import { TicketProvider } from '@/context/TicketContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { Toaster } from '@/components/ui/Toaster';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ResetPassword from '@/pages/ResetPassword';
@@ -23,7 +24,7 @@ import InterviewShare from '@/pages/InterviewShare';
 import Placements from '@/pages/Placements';
 import Teams from '@/pages/Teams';
 import MyTeam from '@/pages/MyTeam';
-import Recruiters from '@/pages/Recruiters';
+import Recruiters, { RecruiterDetailPage, RecruiterEditPage } from '@/pages/Recruiters';
 import Payments from '@/pages/Payments';
 import PaymentLinks from '@/pages/PaymentLinks';
 import Salaries from '@/pages/Salaries';
@@ -32,6 +33,7 @@ import UserAccess from '@/pages/UserAccess';
 import Chat from '@/pages/Chat';
 import Students from '@/pages/Students';
 import StudentDetail from '@/pages/StudentDetail';
+import TicketStudentProfile from '@/pages/TicketStudentProfile';
 import SearchResume from '@/pages/SearchResume';
 import AtsResumes from '@/pages/AtsResumes';
 import PromptEditor from '@/pages/PromptEditor';
@@ -44,6 +46,7 @@ import RecruiterApplications from '@/pages/recruiter/RecruiterApplications';
 import RecruiterMyStudents from '@/pages/recruiter/RecruiterMyStudents';
 import RecruiterStudentDetail from '@/pages/recruiter/RecruiterStudentDetail';
 import RecruiterJobDetail from '@/pages/recruiter/RecruiterJobDetail';
+import RecruiterResumeLibrary from '@/pages/recruiter/RecruiterResumeLibrary';
 
 const queryClient = new QueryClient();
 
@@ -54,6 +57,7 @@ export default function App() {
         <AuthProvider>
           <CompanyProvider>
             <TicketProvider>
+            <Toaster />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -79,6 +83,7 @@ export default function App() {
                         <Route path="students" element={<RecruiterMyStudents />} />
                         <Route path="students/:phone" element={<RecruiterStudentDetail />} />
                         <Route path="jobs/:id" element={<RecruiterJobDetail />} />
+                        <Route path="resume-library" element={<RecruiterResumeLibrary />} />
                         <Route index element={<Navigate to="applications" replace />} />
                       </Route>
                     </Routes>
@@ -104,6 +109,8 @@ export default function App() {
                 <Route path="/teams" element={<Teams />} />
                 <Route path="/my-team" element={<MyTeam />} />
                 <Route path="/recruiters" element={<Recruiters />} />
+                <Route path="/recruiters/:username/edit" element={<RecruiterEditPage />} />
+                <Route path="/recruiters/:username" element={<RecruiterDetailPage />} />
                 <Route path="/payments" element={<Payments />} />
                 <Route path="/payment-links" element={<PaymentLinks />} />
                 <Route path="/salaries" element={<Salaries />} />
@@ -112,6 +119,7 @@ export default function App() {
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/students" element={<Students />} />
                 <Route path="/students/:phone" element={<StudentDetail />} />
+                <Route path="/ticket/:ticketId/student-profile" element={<TicketStudentProfile />} />
                 <Route path="/search-resume" element={<SearchResume />} />
                 <Route path="/ats-resumes" element={<AtsResumes />} />
                 <Route path="/prompt-editor" element={<PromptEditor />} />

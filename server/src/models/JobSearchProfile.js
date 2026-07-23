@@ -9,6 +9,9 @@ const jobSearchProfileSchema = new mongoose.Schema(
       job_title_or: { type: [String], default: [] },
       job_country_code_or: { type: [String], default: [] },
       url_domain_or: { type: [String], default: [] },
+      /** TheirStack url_domain_not — scrape all sources except these domains. */
+      url_domain_not: { type: [String], default: [] },
+      company_domain_or: { type: [String], default: [] },
       job_location_ids: { type: [Number], default: [] },
       posted_filter_mode: { type: String, enum: ['hours', 'days', 'range'], default: 'days' },
       posted_at_max_age_hours: { type: Number, default: 24 },

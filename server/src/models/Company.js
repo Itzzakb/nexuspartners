@@ -45,6 +45,7 @@ const companySchema = new mongoose.Schema(
     demoProfileIds: { type: [String], default: [] },
     paymentTypes: { type: [String], default: ['Cash', 'UPI', 'Bank Transfer'] },
     billRatePerDay: { type: Number, default: 4 },
+    billingCurrency: { type: String, default: 'INR' },
     salaryCurrency: { type: String, default: 'INR' },
     createStudentPassword: { type: String, default: '' },
     visaTypes: { type: [String], default: ['F1', 'H1B', 'H4 EAD', 'Green Card', 'Citizen'] },

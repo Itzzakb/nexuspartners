@@ -5,8 +5,10 @@ import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { useTickets } from '@/context/TicketContext';
 import { ticketApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { TicketCard } from '@/components/tickets/TicketCard';
-import type { TicketView } from '@/types/ticket';
+import { DeletedTicketCard } from '@/components/tickets/DeletedTicketCard';
+import type { Ticket, TicketView } from '@/types/ticket';
 
 const VIEW_OPTIONS: { value: TicketView; label: string }[] = [
   { value: 'all', label: 'All Tickets' },
@@ -31,9 +33,11 @@ export default function Tickets() {
   const assignedTo = searchParams.get('assignedTo') || '';
   const ticketType = searchParams.get('ticketType') || '';
   const noChatLink = searchParams.get('noChatLink') || '';
+  const isDeletedView = view === 'deleted';
 
   const [resumeMembers, setResumeMembers] = useState<Array<{ id: string; name: string }>>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const queryParams = useMemo(() => {
     const p: Record<string, string> = { view };
@@ -49,9 +53,12 @@ export default function Tickets() {
   }, [queryParams]);
 
   useEffect(() => {
-    ticketApi.resumeTeam(companyId || undefined).then((data) => {
-      setResumeMembers(data.members);
-    }).catch(() => setResumeMembers([]));
+    ticketApi
+      .resumeTeam(companyId || undefined)
+      .then((data) => {
+        setResumeMembers(data.members);
+      })
+      .catch(() => setResumeMembers([]));
   }, [companyId]);
 
   const setFilter = (key: string, value: string) => {
@@ -67,6 +74,19 @@ export default function Tickets() {
     setRefreshing(false);
   };
 
+  const handleRestore = async (ticket: Ticket) => {
+    setRestoringId(ticket.id);
+    try {
+      await ticketApi.restore(ticket.id);
+      toast.success(`Restored ${ticket.ticketNumber}`);
+      await refreshTickets(queryParams);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restore ticket');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   const visibleViews = VIEW_OPTIONS.filter((v) => {
     if (v.value === 'my_tickets') return user?.role === 'resume';
     return true;
@@ -76,10 +96,12 @@ export default function Tickets() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl">Tickets</h1>
-          <p className="mt-1 text-body">
-            {VIEW_OPTIONS.find((v) => v.value === view)?.label}
-          </p>
+          <h1 className="text-3xl">{isDeletedView ? 'Deleted Tickets' : 'Tickets'}</h1>
+          {!isDeletedView && (
+            <p className="mt-1 text-body">
+              {VIEW_OPTIONS.find((v) => v.value === view)?.label}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -91,10 +113,12 @@ export default function Tickets() {
             <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <Link to="/create" className="np-btn-primary">
-            <Plus className="mr-2 h-4 w-4" />
-            Create Ticket
-          </Link>
+          {!isDeletedView && (
+            <Link to="/create" className="np-btn-primary">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Ticket
+            </Link>
+          )}
         </div>
       </div>
 
@@ -105,7 +129,9 @@ export default function Tickets() {
           onChange={(e) => setFilter('view', e.target.value)}
         >
           {visibleViews.map((v) => (
-            <option key={v.value} value={v.value}>{v.label}</option>
+            <option key={v.value} value={v.value}>
+              {v.label}
+            </option>
           ))}
         </select>
 
@@ -117,7 +143,9 @@ export default function Tickets() {
           >
             <option value="">All companies</option>
             {companies.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
             ))}
           </select>
         )}
@@ -132,7 +160,9 @@ export default function Tickets() {
               <option value="">All assignments</option>
               <option value="unallocated">Unallocated</option>
               {resumeMembers.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
               ))}
             </select>
 
@@ -175,15 +205,29 @@ export default function Tickets() {
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
       ) : tickets.length === 0 ? (
-        <div className="np-card py-16 text-center text-body">No tickets found</div>
+        <div className="np-card py-16 text-center text-body">
+          {isDeletedView ? 'No deleted tickets' : 'No tickets found'}
+        </div>
+      ) : isDeletedView ? (
+        <div className="space-y-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-body">
+            Showing {tickets.length} deleted ticket{tickets.length === 1 ? '' : 's'}
+          </p>
+          <div className="flex flex-col gap-3">
+            {tickets.map((ticket) => (
+              <DeletedTicketCard
+                key={ticket.id}
+                ticket={ticket}
+                restoring={restoringId === ticket.id}
+                onRestore={handleRestore}
+              />
+            ))}
+          </div>
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {tickets.map((ticket) => (
-            <TicketCard
-              key={ticket.id}
-              ticket={ticket}
-              showCompany={!!user?.isPlatformAdmin}
-            />
+            <TicketCard key={ticket.id} ticket={ticket} showCompany={!!user?.isPlatformAdmin} />
           ))}
         </div>
       )}

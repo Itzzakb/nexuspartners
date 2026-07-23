@@ -18,14 +18,20 @@ export function isCloudinaryConfigured() {
   return configured;
 }
 
-export async function uploadBuffer(buffer, folder = 'nexuspartners') {
+export async function uploadBuffer(buffer, folder = 'nexuspartners', options = {}) {
   if (!configured) {
     throw new Error('Cloudinary is not configured');
   }
 
+  const { resource_type = 'auto', format } = options;
+
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: 'auto' },
+      {
+        folder,
+        resource_type,
+        ...(format ? { format } : {}),
+      },
       (error, result) => {
         if (error) reject(error);
         else resolve(result);

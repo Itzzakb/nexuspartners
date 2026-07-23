@@ -38,7 +38,8 @@ export function canAccessCompany(user, companyId) {
 
 export function formatAmount(amount, currency = 'INR') {
   const value = amount / 100;
-  return new Intl.NumberFormat('en-IN', {
+  const locale = currency === 'INR' ? 'en-IN' : 'en-US';
+  return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
@@ -154,12 +155,13 @@ export async function createTicketFromPayment({ company, customer, paymentId, pa
     currentStage: 'ticket_created',
   });
 
-  await addTicketHistory(ticket._id, {
-    action: 'created',
-    stage: 'ticket_created',
+  await addTicketHistory({
+    ticketId: ticket._id,
+    fromStage: null,
+    toStage: 'ticket_created',
     note: `Ticket auto-created from payment ${paymentId}`,
-    performedBy: null,
-    performedByLabel: 'razorpay_webhook',
+    changedBy: null,
+    changedByName: 'razorpay_webhook',
   });
 
   await ExternalTicketRequest.create({

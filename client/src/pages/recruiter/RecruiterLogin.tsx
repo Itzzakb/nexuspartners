@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useRecruiterAuth } from '@/context/RecruiterAuthContext';
 import { AppLogo } from '@/components/ui/AppLogo';
+import { toast } from '@/lib/toast';
 
 export default function RecruiterLogin() {
   const { login, recruiter, loading } = useRecruiterAuth();
@@ -11,7 +12,6 @@ export default function RecruiterLogin() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && recruiter) {
@@ -20,13 +20,12 @@ export default function RecruiterLogin() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setSubmitting(true);
     try {
       await login(username.trim(), password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      toast.error(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setSubmitting(false);
     }
@@ -42,12 +41,6 @@ export default function RecruiterLogin() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
           <div>
             <label className="mb-1.5 block text-sm font-medium text-heading">Username</label>
             <input

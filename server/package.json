@@ -7,6 +7,8 @@
     "start": "node src/index.js",
     "seed": "node src/scripts/seed.js",
     "seed:job-scrap-master": "node src/scripts/seedJobScrapMaster.js",
+    "seed:theirstack-master": "node src/scripts/seedTheirStackMaster.js",
+    "seed:job-search-profiles": "node src/scripts/seedJobSearchProfiles.js",
     "migrate:legacy-companies": "node src/scripts/migrateLegacyCompanies.js"
   },
   "dependencies": {
@@ -14,13 +16,16 @@
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.5.1",
     "cors": "^2.8.5",
+    "docx": "^9.5.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.12.0",
     "mongoose": "^8.9.3",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
+    "pdf-parse": "^2.4.5",
     "socket.io": "^4.8.1",
     "swagger-ui-express": "^5.0.1"
   }

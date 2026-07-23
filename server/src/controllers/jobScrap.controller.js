@@ -10,6 +10,7 @@ import {
   syncProfileById,
   syncAllActiveProfiles,
   extractJobUrlDomain,
+  extractExperienceYears,
 } from '../services/jobScrap.service.js';
 import { rescheduleProfile, unscheduleProfile } from '../services/jobScrap.scheduler.js';
 
@@ -24,6 +25,10 @@ async function resolveCompanyId(user, companyId) {
 export async function listProfiles(req, res) {
   try {
     const filter = getCompanyFilter(req.user, req.query.companyId);
+    const country = String(req.query.country || '').trim().toUpperCase();
+    if (country) {
+      filter['filters.job_country_code_or'] = country;
+    }
     const items = await JobSearchProfile.find(filter).sort({ name: 1 });
     return res.json({ profiles: items.map(profileToJSON) });
   } catch (err) {
@@ -185,9 +190,19 @@ export async function createManualJob(req, res) {
       applyUrl,
       seniority,
       notes,
+      minExperienceYears,
+      maxExperienceYears,
     } = req.body;
 
     if (!jobTitle) return res.status(400).json({ error: 'Job title is required' });
+
+    const experience = extractExperienceYears({
+      seniority,
+      jobTitle,
+      description,
+      minExperienceYears,
+      maxExperienceYears,
+    });
 
     const item = await ScrapedJob.create({
       source: 'manual',
@@ -203,6 +218,8 @@ export async function createManualJob(req, res) {
       applyUrl: applyUrl || '',
       urlDomain: extractJobUrlDomain(applyUrl, companyDomain),
       seniority: seniority || '',
+      minExperienceYears: experience.minExperienceYears,
+      maxExperienceYears: experience.maxExperienceYears,
       notes: notes || '',
       status: 'open',
       createdBy: req.user._id,
@@ -231,12 +248,44 @@ export async function updateJob(req, res) {
       'hybrid',
       'applyUrl',
       'seniority',
+      'minExperienceYears',
+      'maxExperienceYears',
       'notes',
       'status',
     ];
     fields.forEach((f) => {
       if (req.body[f] !== undefined) item[f] = req.body[f];
     });
+
+    if (
+      req.body.minExperienceYears !== undefined ||
+      req.body.maxExperienceYears !== undefined ||
+      req.body.seniority !== undefined ||
+      req.body.description !== undefined ||
+      req.body.jobTitle !== undefined
+    ) {
+      const experience = extractExperienceYears({
+        seniority: item.seniority,
+        jobTitle: item.jobTitle,
+        description: item.description,
+        minExperienceYears:
+          req.body.minExperienceYears !== undefined
+            ? req.body.minExperienceYears
+            : undefined,
+        maxExperienceYears:
+          req.body.maxExperienceYears !== undefined
+            ? req.body.maxExperienceYears
+            : undefined,
+      });
+      // If caller didn't pass explicit years, allow seniority/description to re-derive.
+      if (req.body.minExperienceYears !== undefined || req.body.maxExperienceYears !== undefined) {
+        item.minExperienceYears = experience.minExperienceYears;
+        item.maxExperienceYears = experience.maxExperienceYears;
+      } else if (experience.minExperienceYears != null || experience.maxExperienceYears != null) {
+        item.minExperienceYears = experience.minExperienceYears;
+        item.maxExperienceYears = experience.maxExperienceYears;
+      }
+    }
 
     await item.save();
     return res.json({ job: scrapedJobToJSON(item) });
@@ -306,6 +355,7 @@ function masterItemToJSON(doc) {
     category: o.category,
     value: o.value,
     label: o.label || o.value,
+    meta: o.meta || {},
     isActive: o.isActive,
     sortOrder: o.sortOrder,
     createdAt: o.createdAt,

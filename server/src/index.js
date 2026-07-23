@@ -31,7 +31,13 @@ import resumeTemplateRoutes from './routes/resumeTemplate.routes.js';
 import promptRoutes from './routes/prompt.routes.js';
 import jobScrapRoutes from './routes/jobScrap.routes.js';
 import recruiterPortalRoutes from './routes/recruiterPortal.routes.js';
-import { swaggerUi, recruiterPortalSwaggerUi, recruiterPortalSpec } from './config/swagger.js';
+import {
+  swaggerUi,
+  platformSwaggerUi,
+  recruiterPortalSwaggerUi,
+  loadPlatformSpec,
+  loadRecruiterPortalSpec,
+} from './config/swagger.js';
 import { handleRazorpayWebhook } from './controllers/webhook.controller.js';
 import { initJobScrapScheduler } from './services/jobScrap.scheduler.js';
 
@@ -73,14 +79,24 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/api/docs/recruiter/openapi.json', (_req, res) => {
-  res.json(recruiterPortalSpec);
+app.get('/api/docs/openapi.json', (_req, res) => {
+  res.json(loadPlatformSpec());
 });
 
+app.get('/api/docs/recruiter/openapi.json', (_req, res) => {
+  res.json(loadRecruiterPortalSpec());
+});
+
+// Mount recruiter docs first so /api/docs/recruiter is not captured by /api/docs
 app.use(
   '/api/docs/recruiter',
-  swaggerUi.serve,
+  swaggerUi.serveFiles({}, { swaggerUrl: '/api/docs/recruiter/openapi.json' }),
   recruiterPortalSwaggerUi
+);
+app.use(
+  '/api/docs',
+  swaggerUi.serveFiles({}, { swaggerUrl: '/api/docs/openapi.json' }),
+  platformSwaggerUi
 );
 
 app.use('/api/auth', authRoutes);

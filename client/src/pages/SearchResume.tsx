@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Download, Search } from 'lucide-react';
-import { externalApi, resumeParseApi, resumeTemplateApi } from '@/lib/api';
+import { studentApi, resumeParseApi, resumeTemplateApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import type { ResumeTemplate } from '@/types/phase7';
 
 export default function SearchResume() {
   const [searchParams] = useSearchParams();
   const [phone, setPhone] = useState(searchParams.get('phone') || '');
+  const companyId = searchParams.get('companyId') || undefined;
   const [student, setStudent] = useState<Record<string, unknown> | null>(null);
   const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
   const [templateId, setTemplateId] = useState('');
@@ -14,8 +16,6 @@ export default function SearchResume() {
   const [loading, setLoading] = useState(false);
   const [building, setBuilding] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
 
   useEffect(() => {
     resumeTemplateApi.list().then((d) => {
@@ -29,15 +29,14 @@ export default function SearchResume() {
     e?.preventDefault();
     if (!phone.trim()) return;
     setLoading(true);
-    setError('');
     setStudent(null);
     try {
-      const data = await externalApi.studentDetails(phone.trim());
-      const s = (data.student || {}) as Record<string, unknown>;
+      const data = await studentApi.get(phone.trim(), companyId);
+      const s = (data.student.details || {}) as Record<string, unknown>;
       setStudent(s);
       setResumeJson(JSON.stringify(s.resume || s, null, 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Student not found');
+      toast.error(err instanceof Error ? err.message : 'Student not found');
     } finally {
       setLoading(false);
     }
@@ -49,21 +48,21 @@ export default function SearchResume() {
 
   const handleBuild = async () => {
     setBuilding(true);
-    setError('');
     try {
       const data = await resumeParseApi.buildDownload({
         phone: phone.trim(),
         templateId: templateId || undefined,
+        companyId,
       });
       const url = data.result?.downloadUrl;
       if (url) {
-        window.open(url, '_blank');
-        setMessage('Resume download started');
+        window.open(url, '_blank', 'noopener,noreferrer');
+        toast.success('Resume DOCX ready — download started');
       } else {
-        setMessage('Build requested (mock mode — no download URL in dev)');
+        toast.error('Resume was built but no download URL was returned');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Build failed');
+      toast.error(err instanceof Error ? err.message : 'Build failed');
     } finally {
       setBuilding(false);
     }
@@ -71,13 +70,12 @@ export default function SearchResume() {
 
   const handleUpdate = async () => {
     setSaving(true);
-    setError('');
     try {
       const resumeData = JSON.parse(resumeJson);
-      await resumeParseApi.updateStudent({ phone: phone.trim(), resumeData });
-      setMessage('Resume updated successfully');
+      await resumeParseApi.updateStudent({ phone: phone.trim(), resumeData, companyId });
+      toast.success('Resume updated successfully');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed — check JSON format');
+      toast.error(err instanceof Error ? err.message : 'Update failed — check JSON format');
     } finally {
       setSaving(false);
     }
@@ -89,15 +87,6 @@ export default function SearchResume() {
         <h1 className="text-3xl">Search Resume</h1>
         <p className="mt-1 text-body">Look up a student and build or update their ATS resume</p>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
 
       <form onSubmit={handleSearch} className="np-card p-4">
         <div className="flex flex-wrap gap-3">

@@ -2,9 +2,10 @@ import mongoose from 'mongoose';
 import Counter from '../models/Counter.js';
 import TicketHistory from '../models/TicketHistory.js';
 import { computeFormStatus, formDataToRows } from '../constants/resumeForm.js';
+import { getClientBaseUrl } from '../utils/publicUrls.js';
 
-function buildResumeFormViewLink(token) {
-  const base = process.env.CLIENT_URL || 'http://localhost:5173';
+export function buildResumeFormViewLink(token, req) {
+  const base = getClientBaseUrl(req);
   return `${base}/resume-form-view/${token}`;
 }
 
@@ -59,6 +60,8 @@ export function ticketToJSON(ticket, extras = {}) {
     dueDate: obj.dueDate,
     notes: obj.notes,
     chatLink: obj.chatLink,
+    studentId:
+      obj.studentId?._id?.toString?.() ?? obj.studentId?.toString?.() ?? obj.studentId ?? null,
     studentPhone: obj.studentPhone || '',
     studentProfileLink: obj.studentProfileLink || '',
     currentStage: obj.currentStage,
@@ -86,6 +89,9 @@ export function ticketToJSON(ticket, extras = {}) {
     onboardingSuccessful: obj.onboardingSuccessful,
     sendBackReason: obj.sendBackReason,
     resumeFormToken: obj.resumeFormToken,
+    // Stored DB status (used for Enable Form Edit / lock)
+    resumeFormStatusStored: obj.resumeFormStatus,
+    // Effective status from current form fields (may be partial after new required fields)
     resumeFormStatus: obj.resumeFormData
       ? computeFormStatus(obj.resumeFormData)
       : obj.resumeFormStatus,
@@ -93,19 +99,26 @@ export function ticketToJSON(ticket, extras = {}) {
     resumeFormData: obj.resumeFormData || null,
     resumeFormRows: obj.resumeFormData ? formDataToRows(obj.resumeFormData) : [],
     resumeFormViewLink: obj.resumeFormViewToken
-      ? buildResumeFormViewLink(obj.resumeFormViewToken)
+      ? buildResumeFormViewLink(obj.resumeFormViewToken, extras.req)
       : extras.resumeFormViewLink ?? '',
-    resumeFormLink: extras.resumeFormLink ?? '',
+    resumeFormLink:
+      extras.resumeFormLink ??
+      (obj._id ? buildResumeFormLink(obj._id, extras.req) : ''),
+    recruiterUsername: extras.recruiterUsername ?? '',
+    recruiterName: extras.recruiterName ?? '',
     isDeleted: obj.isDeleted,
-    deleteReason: obj.deleteReason,
+    deleteReason: obj.deleteReason || '',
+    deletedBy: obj.deletedBy?._id?.toString?.() ?? obj.deletedBy?.toString?.() ?? obj.deletedBy ?? null,
+    deletedByName: obj.deletedBy?.name ?? extras.deletedByName ?? '',
+    deletedAt: obj.deletedAt || null,
     externalSource: obj.externalSource,
     createdAt: obj.createdAt,
     updatedAt: obj.updatedAt,
   };
 }
 
-export function buildResumeFormLink(ticketId) {
-  const base = process.env.CLIENT_URL || 'http://localhost:5173';
+export function buildResumeFormLink(ticketId, req) {
+  const base = getClientBaseUrl(req);
   return `${base}/resume-form/${ticketId}`;
 }
 

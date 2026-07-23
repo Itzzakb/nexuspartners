@@ -1,10 +1,13 @@
 export type PostedFilterMode = 'hours' | 'days' | 'range';
-export type MasterDataCategory = 'job_title' | 'country_code' | 'domain';
+export type MasterDataCategory = 'job_title' | 'country_code' | 'domain' | 'city' | 'company';
 
 export interface JobSearchFilters {
   job_title_or: string[];
   job_country_code_or: string[];
   url_domain_or: string[];
+  /** TheirStack url_domain_not — exclude these job boards/sources. */
+  url_domain_not: string[];
+  company_domain_or: string[];
   job_location_ids: number[];
   posted_filter_mode: PostedFilterMode;
   posted_at_max_age_hours: number;
@@ -37,6 +40,7 @@ export interface JobScrapMasterItem {
   category: MasterDataCategory;
   value: string;
   label: string;
+  meta?: Record<string, unknown>;
   isActive: boolean;
   sortOrder: number;
   createdAt: string;
@@ -58,6 +62,8 @@ export interface ScrapedJob {
   remote: boolean;
   hybrid: boolean;
   seniority: string;
+  minExperienceYears?: number | null;
+  maxExperienceYears?: number | null;
   technologySlugs: string[];
   salaryMinUsd: number | null;
   salaryMaxUsd: number | null;

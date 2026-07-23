@@ -1,6 +1,10 @@
 import Company from '../models/Company.js';
 import { slugify } from '../middleware/auth.js';
 import { visibleCompaniesQuery } from '../utils/companyLegacy.js';
+import {
+  normalizePaymentCurrency,
+  isSupportedPaymentCurrency,
+} from '../constants/payment.js';
 
 function companyToJSON(company) {
   return {
@@ -22,6 +26,7 @@ function companyToJSON(company) {
     demoProfileIds: company.demoProfileIds,
     paymentTypes: company.paymentTypes,
     billRatePerDay: company.billRatePerDay,
+    billingCurrency: company.billingCurrency || company.salaryCurrency || 'INR',
     salaryCurrency: company.salaryCurrency,
     createStudentPassword: company.createStudentPassword,
     visaTypes: company.visaTypes,
@@ -144,6 +149,7 @@ export async function updateCompany(req, res) {
       demoProfileIds,
       paymentTypes,
       billRatePerDay,
+      billingCurrency,
       salaryCurrency,
       createStudentPassword,
       visaTypes,
@@ -172,7 +178,21 @@ export async function updateCompany(req, res) {
     if (createStudentPassword !== undefined) company.createStudentPassword = createStudentPassword;
     if (visaTypes !== undefined) company.visaTypes = visaTypes;
     if (additionalDetailFields !== undefined) company.additionalDetailFields = additionalDetailFields;
-    if (salaryCurrency !== undefined) company.salaryCurrency = salaryCurrency;
+
+    if (billingCurrency !== undefined) {
+      const normalized = normalizePaymentCurrency(billingCurrency);
+      if (!isSupportedPaymentCurrency(normalized)) {
+        return res.status(400).json({ error: `Unsupported billing currency: ${billingCurrency}` });
+      }
+      company.billingCurrency = normalized;
+    }
+    if (salaryCurrency !== undefined) {
+      const normalized = normalizePaymentCurrency(salaryCurrency);
+      if (!isSupportedPaymentCurrency(normalized)) {
+        return res.status(400).json({ error: `Unsupported salary currency: ${salaryCurrency}` });
+      }
+      company.salaryCurrency = normalized;
+    }
 
     if (isPlatform && razorpay !== undefined) {
       company.razorpay = { ...company.razorpay.toObject?.() ?? company.razorpay, ...razorpay };

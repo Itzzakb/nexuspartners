@@ -5,6 +5,7 @@ import { useCompanies } from '@/context/CompanyContext';
 import { placementApi, uploadFile } from '@/lib/api';
 import { ToggleField } from '@/components/ui/Toggle';
 import type { JobPlacement, PlacementDocument } from '@/types/phase4';
+import { toast } from '@/lib/toast';
 
 const DOC_TYPES = [
   { value: 'offer_letter', label: 'Offer letter' },
@@ -34,7 +35,6 @@ export default function Placements() {
   });
   const [docs, setDocs] = useState<PlacementDocument[]>([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -66,7 +66,6 @@ export default function Placements() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
     try {
       await placementApi.create({ ...form, documents: docs });
       setShowForm(false);
@@ -82,7 +81,7 @@ export default function Placements() {
       setDocs([]);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create');
+      toast.error(err instanceof Error ? err.message : 'Failed to create');
     } finally {
       setSaving(false);
     }
@@ -97,7 +96,7 @@ export default function Placements() {
       setDeleteReason('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
     }
   };
 
@@ -132,7 +131,6 @@ export default function Placements() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="np-card space-y-4 p-6">
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <input className="np-input" placeholder="Candidate name *" required value={form.candidateName}
               onChange={(e) => setForm({ ...form, candidateName: e.target.value })} />

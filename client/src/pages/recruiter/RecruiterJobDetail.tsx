@@ -9,7 +9,13 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react';
+import { AtsScoreCard, type AtsLibraryEntry } from '@/components/recruiter/AtsScoreCard';
+import {
+  ApplyFormSidePanel,
+  type StudentApplyForm,
+} from '@/components/recruiter/ApplyFormSidePanel';
 import { recruiterJobsApi, recruiterResumeApi } from '@/lib/recruiterApi';
+import { toast } from '@/lib/toast';
 import type {
   RecruiterJobApplicant,
   RecruiterResumeTemplate,
@@ -35,10 +41,14 @@ export default function RecruiterJobDetail() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [reFixing, setReFixing] = useState(false);
   const [templates, setTemplates] = useState<RecruiterResumeTemplate[]>([]);
   const [templateId, setTemplateId] = useState('');
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [atsEntry, setAtsEntry] = useState<AtsLibraryEntry | null>(null);
+  const [applyPanelOpen, setApplyPanelOpen] = useState(false);
+  const [studentForm, setStudentForm] = useState<StudentApplyForm | null>(null);
+  const [lastApplyUrl, setLastApplyUrl] = useState<string | null>(null);
 
   useEffect(() => {
     recruiterResumeApi
@@ -60,7 +70,7 @@ export default function RecruiterJobDetail() {
       setApplicant(data.applicant);
       setNotes(data.applicant.notes || '');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load job');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load job');
     } finally {
       setLoading(false);
     }
@@ -70,16 +80,28 @@ export default function RecruiterJobDetail() {
     load();
   }, [id, studentPhone]);
 
+  const applyAtsFromResponse = (entry?: AtsLibraryEntry | null) => {
+    if (entry && entry.atsScore != null) {
+      setAtsEntry(entry);
+      const score = entry.atsScore;
+      const meets = entry.atsMeetsTarget ?? score >= (entry.atsTargetScore ?? 90);
+      if (meets) {
+        toast.success(`ATS score ${score} — target met`);
+      } else {
+        toast.success(`ATS score ${score}. Review improvements below.`);
+      }
+    }
+  };
+
   const handleDrop = async () => {
     if (!id || !studentPhone) return;
     setActing(true);
-    setError('');
     try {
       await recruiterJobsApi.drop(id, studentPhone);
-      setMessage('Job dropped for this student');
+      toast.success('Job dropped for this student');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to drop job');
+      toast.error(err instanceof Error ? err.message : 'Failed to drop job');
     } finally {
       setActing(false);
     }
@@ -88,46 +110,63 @@ export default function RecruiterJobDetail() {
   const handleApply = async () => {
     if (!id || !studentPhone) return;
     setActing(true);
-    setError('');
     try {
       const data = await recruiterJobsApi.apply(id, studentPhone);
-      setMessage('Application recorded');
+      toast.success('Application recorded');
+      setLastApplyUrl(data.applyUrl || null);
+      if (data.studentForm) {
+        setStudentForm(data.studentForm as StudentApplyForm);
+        setApplyPanelOpen(true);
+      }
       if (data.applyUrl) {
         window.open(data.applyUrl, '_blank', 'noopener,noreferrer');
       }
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to apply');
+      toast.error(err instanceof Error ? err.message : 'Failed to apply');
     } finally {
       setActing(false);
     }
   };
 
-  const handleFixResume = async () => {
+  const runFixResume = async (improvements?: string[]) => {
     if (!id || !studentPhone) return;
-    setActing(true);
-    setError('');
-    setMessage('');
+    const isReFix = Boolean(improvements?.length);
+    if (isReFix) setReFixing(true);
+    else setActing(true);
     try {
-      const data = await recruiterJobsApi.fixResume(id, studentPhone);
-      setMessage(
-        data.mock
-          ? 'Resume tailored (dev mock — Gemini not configured)'
-          : 'Resume tailored for this job and saved to student profile'
-      );
+      const data = await recruiterJobsApi.fixResume(id, studentPhone, improvements);
+      if (!data.libraryEntry) {
+        toast.success(
+          data.mock
+            ? 'Resume tailored (dev mock — Gemini not configured)'
+            : 'Resume tailored for this job and saved to student profile'
+        );
+      }
+      applyAtsFromResponse(data.libraryEntry || null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fix resume');
+      toast.error(err instanceof Error ? err.message : 'Failed to fix resume');
     } finally {
       setActing(false);
+      setReFixing(false);
     }
+  };
+
+  const handleFixResume = () => runFixResume();
+
+  const handleReFixWithImprovements = () => {
+    const improvements = (atsEntry?.atsImprovements || []).filter(Boolean);
+    if (!improvements.length) {
+      toast.error('No improvement points to apply');
+      return;
+    }
+    return runFixResume(improvements);
   };
 
   const handleDownloadAts = async () => {
     if (!id || !studentPhone) return;
     setActing(true);
-    setError('');
-    setMessage('');
     try {
       const data = await recruiterJobsApi.downloadAtsResume(
         id,
@@ -136,17 +175,14 @@ export default function RecruiterJobDetail() {
       );
       if (data.downloadUrl) {
         window.open(data.downloadUrl, '_blank', 'noopener,noreferrer');
-        setMessage('ATS resume download started');
+        if (!data.libraryEntry) toast.success('ATS resume download started');
       } else {
-        setMessage(
-          data.mock
-            ? 'ATS build requested (dev mock — no download URL)'
-            : 'ATS resume build completed'
-        );
+        toast.error('ATS resume was built but no download URL was returned');
       }
+      applyAtsFromResponse(data.libraryEntry || null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download ATS resume');
+      toast.error(err instanceof Error ? err.message : 'Failed to download ATS resume');
     } finally {
       setActing(false);
     }
@@ -172,7 +208,7 @@ export default function RecruiterJobDetail() {
   }
 
   if (!job || !applicant) {
-    return <p className="text-body">{error || 'Job not found'}</p>;
+    return <p className="text-body">{loadError || 'Job not found'}</p>;
   }
 
   const applicantDetails = applicant.details as Record<string, unknown>;
@@ -195,17 +231,6 @@ export default function RecruiterJobDetail() {
         Back to applications
       </Link>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-
       <div className="np-card p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -219,9 +244,18 @@ export default function RecruiterJobDetail() {
                 </span>
               )}
               {job.datePosted && <span>Posted {formatDate(job.datePosted)}</span>}
-              {job.urlDomain && <span>{job.urlDomain}</span>}
               {job.remote && <span className="text-primary">Remote</span>}
               {job.hybrid && <span>Hybrid</span>}
+              {(job.isSponsored || job.visaSponsorship) && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                  Sponsored
+                </span>
+              )}
+              {job.isApplied && (
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                  Applied
+                </span>
+              )}
             </div>
           </div>
           {isApplied && (
@@ -264,7 +298,7 @@ export default function RecruiterJobDetail() {
         <h2 className="mb-4 text-lg font-semibold text-heading">Applicant</h2>
         <p className="font-medium text-heading">{applicantName}</p>
         <p className="text-sm text-body">{applicant.phone}</p>
-        {applicantDetails.email && (
+        {Boolean(applicantDetails.email) && (
           <p className="text-sm text-body">{String(applicantDetails.email)}</p>
         )}
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -329,12 +363,21 @@ export default function RecruiterJobDetail() {
           )}
         </div>
 
+        {atsEntry && (
+          <AtsScoreCard
+            className="mb-4"
+            entry={atsEntry}
+            refreshing={reFixing}
+            onReFix={handleReFixWithImprovements}
+          />
+        )}
+
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
             className="np-btn-secondary"
             onClick={handleDrop}
-            disabled={acting || isDropped}
+            disabled={acting || reFixing || isDropped}
           >
             <XCircle className="mr-2 inline h-4 w-4" />
             Drop
@@ -343,16 +386,16 @@ export default function RecruiterJobDetail() {
             type="button"
             className="np-btn-secondary"
             onClick={handleFixResume}
-            disabled={acting || isDropped}
+            disabled={acting || reFixing || isDropped}
           >
             <Sparkles className="mr-2 inline h-4 w-4" />
-            {acting ? 'Working...' : resumeFixed ? 'Re-fix Resume' : 'Fix Resume'}
+            {acting && !reFixing ? 'Working...' : resumeFixed ? 'Re-fix Resume' : 'Fix Resume'}
           </button>
           <button
             type="button"
             className="np-btn-secondary"
             onClick={handleDownloadAts}
-            disabled={acting || isDropped}
+            disabled={acting || reFixing || isDropped}
           >
             <Download className="mr-2 inline h-4 w-4" />
             Download ATS Resume
@@ -372,12 +415,29 @@ export default function RecruiterJobDetail() {
             type="button"
             className="np-btn-primary ml-auto"
             onClick={handleApply}
-            disabled={acting || isDropped}
+            disabled={acting || reFixing || isDropped}
           >
             {isApplied ? 'Open apply link' : 'Apply Now'}
           </button>
         </div>
+
+        <p className="mt-3 text-xs text-body">
+          Scores and improvements are also saved under{' '}
+          <Link to="/recruiter-portal/resume-library" className="text-primary hover:underline">
+            Resume Library
+          </Link>
+          .
+        </p>
       </div>
+
+      <ApplyFormSidePanel
+        open={applyPanelOpen}
+        onClose={() => setApplyPanelOpen(false)}
+        form={studentForm}
+        applyUrl={lastApplyUrl}
+        jobTitle={job.jobTitle}
+        companyName={job.companyName}
+      />
     </div>
   );
 }

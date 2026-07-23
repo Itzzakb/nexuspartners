@@ -6,10 +6,11 @@ import { useCompanies } from '@/context/CompanyContext';
 import { paymentApi } from '@/lib/api';
 import { StudentSearch } from '@/components/students/StudentSearch';
 import type { PaymentLink } from '@/types/payment';
-import { LINK_STATUS_LABELS } from '@/types/payment';
+import { LINK_STATUS_LABELS, PAYMENT_CURRENCIES } from '@/types/payment';
 import type { ExternalStudent } from '@/types/phase4';
 import { cn } from '@/lib/utils';
 import { ToggleField } from '@/components/ui/Toggle';
+import { toast } from '@/lib/toast';
 
 const statusColors: Record<string, string> = {
   created: 'bg-blue-100 text-blue-800',
@@ -27,14 +28,13 @@ export default function PaymentLinks() {
   const [companyId, setCompanyId] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
   const [form, setForm] = useState({
     customerName: '',
     customerEmail: '',
     customerContact: '',
     amount: '',
-    currency: company?.salaryCurrency || 'INR',
+    currency: company?.billingCurrency || company?.salaryCurrency || 'INR',
     description: '',
     paymentType: 'renewal',
     expireBy: '',
@@ -60,6 +60,14 @@ export default function PaymentLinks() {
     load();
   }, [companyId]);
 
+  useEffect(() => {
+    if (!showForm) return;
+    setForm((prev) => ({
+      ...prev,
+      currency: company?.billingCurrency || company?.salaryCurrency || 'INR',
+    }));
+  }, [showForm, companyId, company?.billingCurrency, company?.salaryCurrency]);
+
   const handleStudentSelect = (s: ExternalStudent) => {
     setForm((prev) => ({
       ...prev,
@@ -72,7 +80,6 @@ export default function PaymentLinks() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
     try {
       const amount = Math.round(parseFloat(form.amount) * 100);
       await paymentApi.createLink({
@@ -91,7 +98,7 @@ export default function PaymentLinks() {
       setShowForm(false);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create link');
+      toast.error(err instanceof Error ? err.message : 'Failed to create link');
     } finally {
       setSaving(false);
     }
@@ -132,7 +139,6 @@ export default function PaymentLinks() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="np-card space-y-4 p-6">
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <h2 className="text-lg">New Razorpay payment link</h2>
 
           <div>
@@ -149,6 +155,22 @@ export default function PaymentLinks() {
               onChange={(e) => setForm({ ...form, customerEmail: e.target.value })} />
             <input className="np-input" type="number" step="0.01" placeholder="Amount *" required value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-heading">Currency</label>
+              <select
+                className="np-input w-full"
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+              >
+                {PAYMENT_CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-body">
+                Sent to Razorpay as <span className="font-medium">{form.currency}</span>.
+                Amount is in main units (e.g. 100 = {form.currency} 100.00).
+              </p>
+            </div>
             <select className="np-input" value={form.paymentType}
               onChange={(e) => setForm({ ...form, paymentType: e.target.value })}>
               <option value="new">New subscription</option>
@@ -199,7 +221,8 @@ export default function PaymentLinks() {
                     <span className="text-xs text-body">{link.paymentType}</span>
                   </div>
                   <p className="mt-1 text-sm text-body">
-                    {link.amountFormatted} · {link.customerContact || link.customerEmail}
+                    {link.amountFormatted}
+                    {link.currency ? ` (${link.currency})` : ''} · {link.customerContact || link.customerEmail}
                   </p>
                   <p className="text-xs text-body">{link.description}</p>
                   {link.lastPaymentStatus === 'failed' && (
@@ -233,7 +256,7 @@ export default function PaymentLinks() {
                   )}
                   {link.razorpayLinkId.startsWith('plink_mock_') && link.status === 'created' && (
                     <button type="button" className="np-btn-accent text-sm"
-                      onClick={() => paymentApi.simulateMockPay(link.razorpayLinkId).then(() => load()).catch((err) => setError(err.message))}>
+                      onClick={() => paymentApi.simulateMockPay(link.razorpayLinkId).then(() => load()).catch((err) => toast.error(err.message))}>
                       Simulate pay (mock)
                     </button>
                   )}

@@ -181,10 +181,13 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </nav>
 
-      <div className="border-t border-border p-4">
-        <div className="mb-3 truncate text-sm">
-          <p className="font-medium text-heading">{user?.name}</p>
-          <p className="text-xs text-body">{user?.email}</p>
+      <div className="border-t border-border p-3">
+        <div className="mb-2 flex items-center gap-3 rounded-lg px-2 py-2">
+          <UserAvatar name={user?.name} email={user?.email} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-heading">{user?.name || 'User'}</p>
+            <p className="truncate text-xs text-body">{user?.email}</p>
+          </div>
         </div>
         <button
           type="button"
@@ -197,4 +200,36 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
     </aside>
   );
+}
+
+function UserAvatar({ name, email }: { name?: string; email?: string }) {
+  const initials = getInitials(name, email);
+  return (
+    <div
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover text-sm font-semibold tracking-wide text-white shadow-sm ring-2 ring-primary/15"
+      title={name || email || 'User'}
+      aria-hidden
+    >
+      {initials}
+    </div>
+  );
+}
+
+function getInitials(name?: string, email?: string) {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }
+  if (parts.length === 1 && parts[0].length) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  const local = String(email || '')
+    .split('@')[0]
+    .trim();
+  if (local.length >= 2) return local.slice(0, 2).toUpperCase();
+  if (local.length === 1) return local.toUpperCase();
+  return '?';
 }

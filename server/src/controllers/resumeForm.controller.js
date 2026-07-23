@@ -6,10 +6,13 @@ import {
   ensureViewToken,
   emitTicketFormUpdate,
   buildResumeFormViewLink,
+  reconcileResumeFormStatus,
+  syncLinkedStudentFromForm,
 } from '../services/resumeForm.service.js';
 import { formDataToRows } from '../constants/resumeForm.js';
 import { ticketToJSON, buildResumeFormLink } from '../services/ticket.service.js';
 import { parseResumeText } from '../services/gemini.service.js';
+import { completeParsedResumeFromText } from '../services/resumeParseComplete.service.js';
 import Ticket from '../models/Ticket.js';
 
 function canAccessTicket(user, ticket) {
@@ -20,13 +23,14 @@ function canAccessTicket(user, ticket) {
 
 export async function getPublicForm(req, res) {
   try {
-    const ticket = await getTicketForForm(req.params.ticketId);
+    let ticket = await getTicketForForm(req.params.ticketId);
     if (!ticket || ticket.isDeleted) {
       return res.status(404).json({ error: 'Form not found' });
     }
     if (ticket.ticketType !== 'new_resume') {
       return res.status(400).json({ error: 'This ticket does not have a resume form' });
     }
+    ticket = await reconcileResumeFormStatus(ticket);
     return res.json(publicFormPayload(ticket));
   } catch (err) {
     console.error('Get public form error:', err);
@@ -58,8 +62,10 @@ export async function savePublicForm(req, res) {
 
 export async function getSharedFormView(req, res) {
   try {
-    const ticket = await Ticket.findOne({ resumeFormViewToken: req.params.token })
-      .populate('companyId', 'name logoUrl primaryColor');
+    const ticket = await Ticket.findOne({ resumeFormViewToken: req.params.token }).populate(
+      'companyId',
+      'name logoUrl primaryColor'
+    );
 
     if (!ticket || ticket.isDeleted || !ticket.resumeFormData) {
       return res.status(404).json({ error: 'Shared form not found' });
@@ -94,13 +100,53 @@ export async function enableFormEditAuth(req, res) {
 
     return res.json({
       ticket: ticketToJSON(refreshed, {
+        req,
         companyName: refreshed.companyId?.name,
-        resumeFormLink: buildResumeFormLink(refreshed._id),
+        resumeFormLink: buildResumeFormLink(refreshed._id, req),
       }),
     });
   } catch (err) {
     console.error('Enable form edit error:', err);
     return res.status(500).json({ error: 'Failed to enable form edit' });
+  }
+}
+
+export async function syncStudentResumeFromFormAuth(req, res) {
+  try {
+    const ticket = await Ticket.findById(req.params.id).populate('companyId', 'name');
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    if (!canAccessTicket(req.user, ticket)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!ticket.studentId) {
+      return res.status(400).json({ error: 'No student linked to this ticket yet' });
+    }
+    if (!ticket.resumeFormData) {
+      return res.status(400).json({ error: 'Resume form has no data to sync' });
+    }
+
+    const student = await syncLinkedStudentFromForm(ticket);
+    if (!student) {
+      return res.status(404).json({ error: 'Linked student not found' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Student resume updated from form',
+      student: {
+        id: student._id.toString(),
+        phone: student.phone,
+        name: student.name,
+      },
+      ticket: ticketToJSON(ticket, {
+        req,
+        companyName: ticket.companyId?.name,
+        resumeFormLink: buildResumeFormLink(ticket._id, req),
+      }),
+    });
+  } catch (err) {
+    console.error('Sync student resume error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to sync student resume' });
   }
 }
 
@@ -114,12 +160,12 @@ export async function getFormShareLink(req, res) {
 
     const token = await ensureViewToken(ticket);
     return res.json({
-      resumeFormViewLink: buildResumeFormViewLink(token),
+      resumeFormViewLink: buildResumeFormViewLink(token, req),
       resumeFormViewToken: token,
     });
   } catch (err) {
-    console.error('Share link error:', err);
-    return res.status(500).json({ error: 'Failed to generate share link' });
+    console.error('Form share link error:', err);
+    return res.status(500).json({ error: 'Failed to create share link' });
   }
 }
 
@@ -127,9 +173,9 @@ export async function parseResume(req, res) {
   try {
     const { text } = req.body;
     const result = await parseResumeText(text);
-    return res.json({ success: true, ...result });
+    const parsed = completeParsedResumeFromText(result.parsed, text);
+    return res.json({ success: true, parsed, source: result.source });
   } catch (err) {
-    console.error('Parse resume error:', err);
-    return res.status(400).json({ error: err.message || 'Failed to parse resume' });
+    return res.status(400).json({ error: err.message || 'Parse failed' });
   }
 }

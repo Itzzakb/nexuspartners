@@ -5,7 +5,7 @@ import {
   getCompanyFilter,
   canAccessCompany,
   teamToJSON,
-} from '../utils/phase4.helpers.js';
+} from '../utils/staffPortalHelpers.js';
 import {
   fetchRecruiterStudents,
   resolveApiCompanyName,

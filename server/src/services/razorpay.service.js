@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { normalizePaymentCurrency } from '../constants/payment.js';
+import { getClientBaseUrl } from '../utils/publicUrls.js';
 
 export function isMockMode(credentials = {}) {
   const keyId = credentials.keyId || process.env.RAZORPAY_KEY_ID || '';
@@ -20,7 +22,7 @@ export async function createRazorpayPaymentLink(credentials, payload) {
     const mockId = `plink_mock_${Date.now()}`;
     return {
       id: mockId,
-      short_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/payments/mock/${mockId}`,
+      short_url: `${getClientBaseUrl()}/payments/mock/${mockId}`,
       status: 'created',
       amount: payload.amount,
       currency: payload.currency,
@@ -68,7 +70,7 @@ export function buildRazorpayLinkPayload({
 }) {
   const payload = {
     amount: Math.round(amount),
-    currency: currency || 'INR',
+    currency: normalizePaymentCurrency(currency),
     description: description || 'Subscription payment',
     customer: {
       name: customer.name || '',

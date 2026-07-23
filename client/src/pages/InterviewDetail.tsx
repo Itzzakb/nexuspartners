@@ -3,11 +3,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Copy } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { interviewApi, uploadFile } from '@/lib/api';
+import { toPublicAppUrl } from '@/lib/publicAppUrl';
 import { StudentSearch } from '@/components/students/StudentSearch';
 import type { Interview, InterviewStage } from '@/types/phase4';
 import { INTERVIEW_STAGE_LABELS } from '@/types/phase4';
 import type { ExternalStudent } from '@/types/phase4';
 import { ToggleField } from '@/components/ui/Toggle';
+import { toast } from '@/lib/toast';
 
 const STAGES: InterviewStage[] = ['interview_reported', 'ready_for_interview', 'interview_completed'];
 
@@ -35,7 +37,6 @@ export default function InterviewDetail() {
   });
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function InterviewDetail() {
             : '',
         });
       })
-      .catch(() => setError('Interview not found'))
+      .catch(() => toast.error('Interview not found'))
       .finally(() => setLoading(false));
   }, [id, isNew]);
 
@@ -72,7 +73,6 @@ export default function InterviewDetail() {
 
   const handleSave = async () => {
     setSaving(true);
-    setError('');
     try {
       if (isNew) {
         const data = await interviewApi.create({
@@ -98,7 +98,7 @@ export default function InterviewDetail() {
         setInterview(data.interview);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      toast.error(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setSaving(false);
     }
@@ -106,7 +106,7 @@ export default function InterviewDetail() {
 
   const copyShare = async () => {
     if (!interview.shareLink) return;
-    await navigator.clipboard.writeText(interview.shareLink);
+    await navigator.clipboard.writeText(toPublicAppUrl(interview.shareLink));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -126,12 +126,6 @@ export default function InterviewDetail() {
           )}
         </div>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       <div className="np-card space-y-4 p-6">
         <div>
@@ -301,7 +295,7 @@ export default function InterviewDetail() {
 
             {interview.shareLink && (
               <div className="flex items-center gap-2 rounded-lg bg-muted p-3 text-sm">
-                <span className="truncate text-body">{interview.shareLink}</span>
+                <span className="truncate text-body">{toPublicAppUrl(interview.shareLink)}</span>
                 <button type="button" className="np-btn-secondary shrink-0" onClick={copyShare}>
                   <Copy className="mr-1 h-4 w-4" />
                   {copied ? 'Copied' : 'Copy'}

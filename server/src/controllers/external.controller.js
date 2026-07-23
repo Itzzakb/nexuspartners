@@ -2,6 +2,7 @@ import Company from '../models/Company.js';
 import {
   fetchStudents,
   fetchCompanyMembers,
+  getCompanyMember,
   fetchStudentDetails,
   fetchJobRoles,
   createClerk,
@@ -16,6 +17,12 @@ async function resolveCompanyForRequest(user, queryCompanyId) {
   const company = await Company.findById(companyId);
   if (!company) throw new Error('Company not found');
   return company;
+}
+
+function canManageRecruiters(user) {
+  if (user.isPlatformAdmin || user.isCompanyAdmin) return true;
+  const perms = user.modulePermissions || {};
+  return !!perms.recruiters;
 }
 
 export async function proxyStudents(req, res) {
@@ -42,6 +49,20 @@ export async function proxyCompanyMembers(req, res) {
   }
 }
 
+export async function getRecruiter(req, res) {
+  try {
+    const username = req.params.username || req.body.username;
+    if (!username) return res.status(400).json({ error: 'Username is required' });
+
+    const company = await resolveCompanyForRequest(req.user, req.query.companyId || req.body.companyId);
+    const clerk = await getCompanyMember(company._id, username);
+    return res.json({ clerk });
+  } catch (err) {
+    const status = err.message === 'Recruiter not found' ? 404 : 500;
+    return res.status(status).json({ error: err.message || 'Failed to fetch recruiter' });
+  }
+}
+
 export async function proxyStudentDetails(req, res) {
   try {
     const { phone } = req.body;
@@ -64,9 +85,16 @@ export async function proxyJobRoles(_req, res) {
 
 export async function createRecruiter(req, res) {
   try {
+    if (!canManageRecruiters(req.user)) {
+      return res.status(403).json({ error: 'You do not have permission to create recruiters' });
+    }
+
     const { name, mobile, email, username, password, companyId } = req.body;
     if (!name || !email || !username || !password) {
       return res.status(400).json({ error: 'Name, email, username, and password are required' });
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
     const company = await resolveCompanyForRequest(req.user, companyId);
@@ -100,11 +128,18 @@ export async function createRecruiter(req, res) {
 
 export async function updateRecruiter(req, res) {
   try {
-    const { username, data } = req.body;
+    if (!canManageRecruiters(req.user)) {
+      return res.status(403).json({ error: 'You do not have permission to edit recruiters' });
+    }
+
+    const { username, data, companyId } = req.body;
     if (!username || !data) return res.status(400).json({ error: 'username and data required' });
-    const result = await editClerk(username, data);
-    return res.json({ success: true, result });
+
+    const company = await resolveCompanyForRequest(req.user, companyId);
+    const result = await editClerk(username, data, company._id);
+    return res.json({ success: true, result, clerk: result.clerk });
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to update recruiter' });
+    const status = err.message === 'Recruiter not found' ? 404 : 500;
+    return res.status(status).json({ error: err.message || 'Failed to update recruiter' });
   }
 }

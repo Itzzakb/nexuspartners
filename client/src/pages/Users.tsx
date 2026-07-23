@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { userApi, type User } from '@/lib/api';
+import { toast } from '@/lib/toast';
 
 const ROLES = ['admin', 'mentor', 'resume', 'onboarding'] as const;
 
@@ -8,8 +9,7 @@ export default function Users() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const loadUsers = async () => {
     setLoading(true);
@@ -17,7 +17,7 @@ export default function Users() {
       const data = await userApi.list();
       setUsers(data.users);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load users');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load users');
     } finally {
       setLoading(false);
     }
@@ -30,34 +30,38 @@ export default function Users() {
   const toggleActive = async (u: User) => {
     try {
       await userApi.update(u.id, { isActive: !u.isActive });
-      setMessage(`${u.name} ${u.isActive ? 'deactivated' : 'activated'}`);
+      toast.success(`${u.name} ${u.isActive ? 'deactivated' : 'activated'}`);
       loadUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed');
+      toast.error(err instanceof Error ? err.message : 'Update failed');
     }
   };
 
   const changeRole = async (u: User, role: string) => {
     try {
       await userApi.update(u.id, { role: role as User['role'] });
-      setMessage(`Role updated for ${u.name}`);
+      toast.success(`Role updated for ${u.name}`);
       loadUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed');
+      toast.error(err instanceof Error ? err.message : 'Update failed');
     }
   };
 
   const sendReset = async (u: User) => {
     try {
       await userApi.sendReset(u.id);
-      setMessage(`Password reset link sent to ${u.email}`);
+      toast.success(`Password reset link sent to ${u.email}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send reset');
+      toast.error(err instanceof Error ? err.message : 'Failed to send reset');
     }
   };
 
   if (!currentUser?.isCompanyAdmin && !currentUser?.isPlatformAdmin) {
     return <p className="text-body">Access denied.</p>;
+  }
+
+  if (!loading && loadError) {
+    return <p className="text-body">{loadError}</p>;
   }
 
   return (
@@ -66,17 +70,6 @@ export default function Users() {
         <h1 className="text-3xl">User Management</h1>
         <p className="mt-1 text-body">Activate, revoke, and manage team members</p>
       </div>
-
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="flex justify-center py-12">

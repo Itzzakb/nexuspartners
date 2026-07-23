@@ -101,3 +101,14 @@ export const LINK_STATUS_LABELS: Record<LinkStatus, string> = {
   cancelled: 'Cancelled',
   partially_paid: 'Partially paid',
 };
+
+export const PAYMENT_CURRENCIES = [
+  { code: 'INR', label: 'INR — Indian Rupee' },
+  { code: 'USD', label: 'USD — US Dollar' },
+  { code: 'EUR', label: 'EUR — Euro' },
+  { code: 'GBP', label: 'GBP — British Pound' },
+  { code: 'SGD', label: 'SGD — Singapore Dollar' },
+  { code: 'AED', label: 'AED — UAE Dirham' },
+  { code: 'AUD', label: 'AUD — Australian Dollar' },
+  { code: 'CAD', label: 'CAD — Canadian Dollar' },
+] as const;

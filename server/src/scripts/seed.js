@@ -5,6 +5,7 @@ import Company from '../models/Company.js';
 import User from '../models/User.js';
 import { migrateFutureFluxToNexusPartners } from '../utils/companyLegacy.js';
 import { seedJobScrapMasterForCompany } from '../utils/jobScrapMasterSeed.js';
+import { seedJobSearchProfilesForCompany } from '../utils/jobSearchProfileSeed.js';
 import { upsertRecruiterAccount } from '../services/recruiterPortal.service.js';
 
 const SALT_ROUNDS = 12;
@@ -71,6 +72,7 @@ async function seed() {
   );
 
   const masterSeed = await seedJobScrapMasterForCompany(platformCompany._id, adminUser._id);
+  const profileSeed = await seedJobSearchProfilesForCompany(platformCompany._id, adminUser._id);
 
   const testRecruiter = await upsertRecruiterAccount({
     username: 'recruiter',
@@ -91,6 +93,15 @@ async function seed() {
   console.log('  Legacy migration — records moved:', migration.migratedRecords);
   console.log('  Legacy migration — companies removed:', migration.removedCompanies);
   console.log('  Job scrap master:', masterSeed.created, 'created,', masterSeed.skipped, 'skipped');
+  console.log(
+    '  Job search profiles:',
+    profileSeed.created,
+    'created,',
+    profileSeed.updated,
+    'updated,',
+    profileSeed.skipped,
+    'skipped'
+  );
   console.log('  isActive:', adminUser.isActive);
 
   process.exit(0);

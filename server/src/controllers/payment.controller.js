@@ -16,6 +16,11 @@ import {
   buildRazorpayLinkPayload,
   isMockMode,
 } from '../services/razorpay.service.js';
+import {
+  normalizePaymentCurrency,
+  isSupportedPaymentCurrency,
+  getBillingCurrency,
+} from '../constants/payment.js';
 
 export async function listPayments(req, res) {
   try {
@@ -87,7 +92,7 @@ export async function createManualPayment(req, res) {
       studentPhone: studentPhone || '',
       studentEmail: studentEmail || '',
       amount: Math.round(amount),
-      currency: currency || company.salaryCurrency || 'INR',
+      currency: currency || getBillingCurrency(company),
       paymentMethod: paymentMethod || 'cash',
       paymentType: paymentType || 'other',
       status: 'paid',
@@ -161,12 +166,19 @@ export async function createPaymentLink(req, res) {
     const company = await Company.findById(targetCompanyId);
     if (!company) return res.status(400).json({ error: 'Invalid company' });
 
+    const normalizedCurrency = normalizePaymentCurrency(
+      currency || getBillingCurrency(company)
+    );
+    if (!isSupportedPaymentCurrency(normalizedCurrency)) {
+      return res.status(400).json({ error: `Unsupported currency: ${currency}` });
+    }
+
     const credentials = getRazorpayCredentials(company);
     const amountSmallest = Math.round(amount);
 
     const razorpayPayload = buildRazorpayLinkPayload({
       amount: amountSmallest,
-      currency: currency || company.salaryCurrency || 'INR',
+      currency: normalizedCurrency,
       description: description || `${company.name} payment`,
       customer: {
         name: customerName,
@@ -258,7 +270,7 @@ export async function createSubscription(req, res) {
       studentEmail: studentEmail || '',
       planName: planName || '',
       amount: amount ? Math.round(amount) : 0,
-      currency: currency || company.salaryCurrency || 'INR',
+      currency: currency || getBillingCurrency(company),
       frequency: frequency || 'monthly',
       nextDueDate: nextDueDate ? new Date(nextDueDate) : null,
       notes: notes || '',

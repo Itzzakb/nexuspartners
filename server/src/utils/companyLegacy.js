@@ -13,6 +13,7 @@ import BillingRecord from '../models/BillingRecord.js';
 import PermissionTemplate from '../models/PermissionTemplate.js';
 import ResumeTemplate from '../models/ResumeTemplate.js';
 import StudentNote from '../models/StudentNote.js';
+import Student from '../models/Student.js';
 import Conversation from '../models/Conversation.js';
 
 const COMPANY_SCOPED_MODELS = [
@@ -29,6 +30,7 @@ const COMPANY_SCOPED_MODELS = [
   PermissionTemplate,
   ResumeTemplate,
   StudentNote,
+  Student,
   Conversation,
 ];
 

@@ -3,7 +3,10 @@ import Ticket from '../models/Ticket.js';
 import TicketHistory from '../models/TicketHistory.js';
 import Company from '../models/Company.js';
 import User from '../models/User.js';
+import Student from '../models/Student.js';
+import RecruiterAccount from '../models/RecruiterAccount.js';
 import ExternalTicketRequest from '../models/ExternalTicketRequest.js';
+import { normalizePhone } from '../services/nexusStudentApi.service.js';
 import { TICKET_STAGES } from '../constants/ticket.js';
 import {
   generateTicketNumber,
@@ -82,13 +85,15 @@ export async function listTickets(req, res) {
       .populate('companyId', 'name slug logoUrl')
       .populate('createdBy', 'name email')
       .populate('assignedTo', 'name email')
-      .sort({ createdAt: -1 });
+      .populate('deletedBy', 'name email')
+      .sort(filter.isDeleted ? { deletedAt: -1, updatedAt: -1 } : { createdAt: -1 });
 
     return res.json({
       tickets: tickets.map((t) =>
         ticketToJSON(t, {
+          req,
           companyName: t.companyId?.name,
-          resumeFormLink: buildResumeFormLink(t._id),
+          resumeFormLink: buildResumeFormLink(t._id, req),
         })
       ),
     });
@@ -211,8 +216,9 @@ export async function getTicketDashboard(req, res) {
       .slice(0, 5)
       .map((t) =>
         ticketToJSON(t, {
+          req,
           companyName: t.companyId?.name,
-          resumeFormLink: buildResumeFormLink(t._id),
+          resumeFormLink: buildResumeFormLink(t._id, req),
         })
       );
 
@@ -262,10 +268,14 @@ export async function getTicket(req, res) {
       .populate('changedBy', 'name')
       .sort({ createdAt: -1 });
 
+    const recruiterExtras = await recruiterExtrasForTicket(ticket);
+
     return res.json({
       ticket: ticketToJSON(ticket, {
+        req,
         companyName: ticket.companyId?.name,
-        resumeFormLink: buildResumeFormLink(ticket._id),
+        resumeFormLink: buildResumeFormLink(ticket._id, req),
+        ...recruiterExtras,
       }),
       history: history.map((h) => ({
         id: h._id.toString(),
@@ -289,6 +299,36 @@ function canAccessTicket(user, ticket) {
   return ticketCompanyId === user.companyId._id.toString();
 }
 
+function canAssignRecruiter(user) {
+  return (
+    user.isPlatformAdmin ||
+    user.isCompanyAdmin ||
+    user.role === 'onboarding'
+  );
+}
+
+async function recruiterExtrasForTicket(ticket) {
+  if (!ticket.studentId) {
+    return { recruiterUsername: '', recruiterName: '' };
+  }
+
+  const student = await Student.findById(ticket.studentId).select('recruiterUsername');
+  if (!student?.recruiterUsername) {
+    return { recruiterUsername: '', recruiterName: '' };
+  }
+
+  const companyId = ticket.companyId?._id ?? ticket.companyId;
+  const recruiter = await RecruiterAccount.findOne({
+    companyId,
+    username: student.recruiterUsername.toLowerCase(),
+  }).select('name username');
+
+  return {
+    recruiterUsername: student.recruiterUsername,
+    recruiterName: recruiter?.name || student.recruiterUsername,
+  };
+}
+
 export async function createTicket(req, res) {
   try {
     const {
@@ -299,6 +339,7 @@ export async function createTicket(req, res) {
       dueDate,
       notes,
       chatLink,
+      studentId,
       studentPhone,
       studentProfileLink,
       companyId,
@@ -316,6 +357,19 @@ export async function createTicket(req, res) {
     const company = await Company.findById(targetCompanyId);
     if (!company) return res.status(400).json({ error: 'Invalid company' });
 
+    let linkedStudent = null;
+    if (studentId) {
+      linkedStudent = await Student.findOne({ _id: studentId, companyId: company._id });
+      if (!linkedStudent) {
+        return res.status(400).json({ error: 'Selected student does not belong to this company' });
+      }
+    } else if (ticketType === 'existing_resume' && phone) {
+      linkedStudent = await Student.findOne({
+        companyId: company._id,
+        phoneNormalized: normalizePhone(phone),
+      });
+    }
+
     const ticketNumber = await generateTicketNumber();
 
     const ticket = await Ticket.create({
@@ -327,7 +381,8 @@ export async function createTicket(req, res) {
       dueDate: dueDate ? new Date(dueDate) : null,
       notes: notes || '',
       chatLink: chatLink || '',
-      studentPhone: studentPhone || phone || '',
+      studentId: linkedStudent?._id || null,
+      studentPhone: linkedStudent?.phone || studentPhone || '',
       studentProfileLink: studentProfileLink || '',
       companyId: company._id,
       createdBy: req.user._id,
@@ -349,8 +404,9 @@ export async function createTicket(req, res) {
       .populate('assignedTo', 'name');
 
     const json = ticketToJSON(populated, {
+      req,
       companyName: company.name,
-      resumeFormLink: buildResumeFormLink(ticket._id),
+      resumeFormLink: buildResumeFormLink(ticket._id, req),
     });
 
     emitTicketEvent(company._id.toString(), 'ticket:created', { ticket: json });
@@ -383,8 +439,9 @@ export async function createExternalTicket(req, res) {
             duplicate: true,
             ticket: {
               ...ticketToJSON(ticket, {
+                req,
                 companyName: ticket.companyId?.name,
-                resumeFormLink: buildResumeFormLink(ticket._id),
+                resumeFormLink: buildResumeFormLink(ticket._id, req),
               }),
             },
           });
@@ -437,8 +494,9 @@ export async function createExternalTicket(req, res) {
 
     const populated = await Ticket.findById(ticket._id).populate('companyId', 'name');
     const json = ticketToJSON(populated, {
+      req,
       companyName: company.name,
-      resumeFormLink: buildResumeFormLink(ticket._id),
+      resumeFormLink: buildResumeFormLink(ticket._id, req),
     });
 
     emitTicketEvent(company._id.toString(), 'ticket:created', { ticket: json });
@@ -456,7 +514,7 @@ export async function updateTicket(req, res) {
     if (!ticket || ticket.isDeleted) return res.status(404).json({ error: 'Ticket not found' });
     if (!canAccessTicket(req.user, ticket)) return res.status(403).json({ error: 'Access denied' });
 
-    const { candidateName, phone, email, dueDate, notes, chatLink, onboardingSuccessful, sendBackReason, studentPhone, studentProfileLink } = req.body;
+    const { candidateName, phone, email, dueDate, notes, chatLink, onboardingSuccessful, sendBackReason, studentId, studentPhone, studentProfileLink } = req.body;
 
     if (candidateName !== undefined) ticket.candidateName = candidateName;
     if (phone !== undefined) ticket.phone = phone;
@@ -464,6 +522,7 @@ export async function updateTicket(req, res) {
     if (dueDate !== undefined) ticket.dueDate = dueDate ? new Date(dueDate) : null;
     if (notes !== undefined) ticket.notes = notes;
     if (chatLink !== undefined) ticket.chatLink = chatLink;
+    if (studentId !== undefined) ticket.studentId = studentId || null;
     if (studentPhone !== undefined) ticket.studentPhone = studentPhone;
     if (studentProfileLink !== undefined) ticket.studentProfileLink = studentProfileLink;
     if (onboardingSuccessful !== undefined) ticket.onboardingSuccessful = onboardingSuccessful;
@@ -472,7 +531,7 @@ export async function updateTicket(req, res) {
     await ticket.save();
 
     const populated = await populateTicket(ticket._id);
-    const json = ticketToJSON(populated, { resumeFormLink: buildResumeFormLink(ticket._id) });
+    const json = ticketToJSON(populated, { req, resumeFormLink: buildResumeFormLink(ticket._id, req) });
     emitTicketEvent(ticket.companyId.toString(), 'ticket:updated', { ticket: json });
 
     return res.json({ ticket: json });
@@ -507,13 +566,76 @@ export async function changeStage(req, res) {
     });
 
     const populated = await populateTicket(ticket._id);
-    const json = ticketToJSON(populated, { resumeFormLink: buildResumeFormLink(ticket._id) });
+    const json = ticketToJSON(populated, { req, resumeFormLink: buildResumeFormLink(ticket._id, req) });
     emitTicketEvent(ticket.companyId.toString(), 'ticket:stage_changed', { ticket: json });
 
     return res.json({ ticket: json });
   } catch (err) {
     console.error('Change stage error:', err);
     return res.status(500).json({ error: 'Failed to change stage' });
+  }
+}
+
+export async function assignRecruiter(req, res) {
+  try {
+    if (!canAssignRecruiter(req.user)) {
+      return res.status(403).json({ error: 'Only onboarding team can assign recruiters' });
+    }
+
+    const { recruiterUsername } = req.body;
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket || ticket.isDeleted) return res.status(404).json({ error: 'Ticket not found' });
+    if (!canAccessTicket(req.user, ticket)) return res.status(403).json({ error: 'Access denied' });
+
+    if (!ticket.studentId) {
+      return res.status(400).json({ error: 'Create or link a student before assigning a recruiter' });
+    }
+
+    const student = await Student.findOne({ _id: ticket.studentId, companyId: ticket.companyId });
+    if (!student) return res.status(404).json({ error: 'Linked student not found' });
+
+    const username = String(recruiterUsername || '').trim().toLowerCase();
+    if (username) {
+      const recruiter = await RecruiterAccount.findOne({
+        companyId: ticket.companyId,
+        username,
+        isActive: true,
+      });
+      if (!recruiter) {
+        return res.status(400).json({ error: 'Recruiter not found or inactive' });
+      }
+    }
+
+    const previous = student.recruiterUsername || '';
+    student.recruiterUsername = username;
+    await student.save();
+
+    await addTicketHistory({
+      ticketId: ticket._id,
+      fromStage: ticket.currentStage,
+      toStage: ticket.currentStage,
+      note: username ? `Recruiter assigned: @${username}` : 'Recruiter unassigned',
+      changedBy: req.user._id,
+      changedByName: req.user.name,
+      metadata: { recruiterUsername: username, previousRecruiterUsername: previous },
+    });
+
+    const populated = await populateTicket(ticket._id);
+    const recruiterExtras = await recruiterExtrasForTicket(populated);
+    const json = ticketToJSON(populated, {
+      req,
+      resumeFormLink: buildResumeFormLink(ticket._id, req),
+      ...recruiterExtras,
+    });
+    emitTicketEvent(ticket.companyId.toString(), 'ticket:recruiter_assigned', { ticket: json });
+
+    return res.json({
+      ticket: json,
+      student: { id: student._id.toString(), recruiterUsername: username },
+    });
+  } catch (err) {
+    console.error('Assign recruiter error:', err);
+    return res.status(500).json({ error: 'Failed to assign recruiter' });
   }
 }
 
@@ -548,7 +670,7 @@ export async function assignTicket(req, res) {
     });
 
     const populated = await populateTicket(ticket._id);
-    const json = ticketToJSON(populated, { resumeFormLink: buildResumeFormLink(ticket._id) });
+    const json = ticketToJSON(populated, { req, resumeFormLink: buildResumeFormLink(ticket._id, req) });
     emitTicketEvent(ticket.companyId.toString(), 'ticket:assigned', { ticket: json });
 
     return res.json({ ticket: json });
@@ -581,7 +703,7 @@ export async function addNote(req, res) {
     await ticket.save();
 
     const populated = await populateTicket(ticket._id);
-    const json = ticketToJSON(populated, { resumeFormLink: buildResumeFormLink(ticket._id) });
+    const json = ticketToJSON(populated, { req, resumeFormLink: buildResumeFormLink(ticket._id, req) });
     emitTicketEvent(ticket.companyId.toString(), 'ticket:updated', { ticket: json });
 
     return res.json({ ticket: json });
@@ -610,7 +732,7 @@ export async function addResumeFile(req, res) {
     await ticket.save();
 
     const populated = await populateTicket(ticket._id);
-    const json = ticketToJSON(populated, { resumeFormLink: buildResumeFormLink(ticket._id) });
+    const json = ticketToJSON(populated, { req, resumeFormLink: buildResumeFormLink(ticket._id, req) });
     emitTicketEvent(ticket.companyId.toString(), 'ticket:updated', { ticket: json });
 
     return res.json({ ticket: json });
@@ -650,6 +772,52 @@ export async function deleteTicket(req, res) {
   } catch (err) {
     console.error('Delete ticket error:', err);
     return res.status(500).json({ error: 'Failed to delete ticket' });
+  }
+}
+
+export async function restoreTicket(req, res) {
+  try {
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket || !ticket.isDeleted) {
+      return res.status(404).json({ error: 'Deleted ticket not found' });
+    }
+    if (!canAccessTicket(req.user, ticket)) return res.status(403).json({ error: 'Access denied' });
+
+    ticket.isDeleted = false;
+    ticket.deleteReason = '';
+    ticket.deletedBy = null;
+    ticket.deletedAt = null;
+    await ticket.save();
+
+    await addTicketHistory({
+      ticketId: ticket._id,
+      fromStage: ticket.currentStage,
+      toStage: ticket.currentStage,
+      note: 'Ticket restored',
+      changedBy: req.user._id,
+      changedByName: req.user.name,
+    });
+
+    const populated = await Ticket.findById(ticket._id)
+      .populate('companyId', 'name slug logoUrl')
+      .populate('createdBy', 'name email')
+      .populate('assignedTo', 'name email');
+
+    emitTicketEvent(ticket.companyId.toString(), 'ticket:updated', {
+      ticketId: ticket._id.toString(),
+    });
+
+    return res.json({
+      success: true,
+      ticket: ticketToJSON(populated, {
+        req,
+        companyName: populated.companyId?.name,
+        resumeFormLink: buildResumeFormLink(populated._id, req),
+      }),
+    });
+  } catch (err) {
+    console.error('Restore ticket error:', err);
+    return res.status(500).json({ error: 'Failed to restore ticket' });
   }
 }
 

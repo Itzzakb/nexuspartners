@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -8,24 +9,21 @@ export default function ResetPassword() {
   const token = searchParams.get('token') || '';
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirm) {
-      setError('Passwords do not match');
+      toast.error('Passwords do not match');
       return;
     }
-    setError('');
     setLoading(true);
     try {
       await authApi.resetPassword(token, password);
-      setSuccess(true);
+      toast.success('Password updated. Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reset failed');
+      toast.error(err instanceof Error ? err.message : 'Reset failed');
     } finally {
       setLoading(false);
     }
@@ -50,44 +48,33 @@ export default function ResetPassword() {
         <h1 className="mb-2 text-2xl">Reset password</h1>
         <p className="mb-6 text-sm text-body">Enter your new password below.</p>
 
-        {success ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-            Password updated. Redirecting to login...
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-heading">New password</label>
+            <input
+              type="password"
+              className="np-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+            />
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-heading">New password</label>
-              <input
-                type="password"
-                className="np-input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-heading">Confirm password</label>
-              <input
-                type="password"
-                className="np-input"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-            <button type="submit" className="np-btn-primary w-full" disabled={loading}>
-              {loading ? 'Updating...' : 'Update password'}
-            </button>
-          </form>
-        )}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-heading">Confirm password</label>
+            <input
+              type="password"
+              className="np-input"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={6}
+            />
+          </div>
+          <button type="submit" className="np-btn-primary w-full" disabled={loading}>
+            {loading ? 'Updating...' : 'Update password'}
+          </button>
+        </form>
       </div>
     </div>
   );

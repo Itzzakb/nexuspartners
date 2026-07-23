@@ -15,6 +15,9 @@ const scrapedJobSchema = new mongoose.Schema(
     remote: { type: Boolean, default: false },
     hybrid: { type: Boolean, default: false },
     seniority: { type: String, default: '' },
+    /** Required experience band in years (nullable = unknown / not specified). */
+    minExperienceYears: { type: Number, default: null },
+    maxExperienceYears: { type: Number, default: null },
     technologySlugs: { type: [String], default: [] },
     salaryMinUsd: { type: Number, default: null },
     salaryMaxUsd: { type: Number, default: null },
@@ -40,6 +43,7 @@ const scrapedJobSchema = new mongoose.Schema(
 );
 
 scrapedJobSchema.index({ companyId: 1, datePosted: -1 });
+scrapedJobSchema.index({ companyId: 1, minExperienceYears: 1, maxExperienceYears: 1 });
 scrapedJobSchema.index(
   { theirstackJobId: 1, companyId: 1 },
   { unique: true, partialFilterExpression: { theirstackJobId: { $type: 'number' } } }

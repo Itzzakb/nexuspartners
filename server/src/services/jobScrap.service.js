@@ -17,6 +17,90 @@ export function extractJobUrlDomain(...urls) {
   return '';
 }
 
+const SENIORITY_EXPERIENCE_YEARS = {
+  intern: [0, 1],
+  internship: [0, 1],
+  entry: [0, 2],
+  entry_level: [0, 2],
+  junior: [0, 2],
+  mid: [2, 5],
+  mid_level: [2, 5],
+  intermediate: [2, 5],
+  senior: [5, 10],
+  staff: [8, 15],
+  principal: [8, 15],
+  lead: [6, 12],
+  c_level: [10, 25],
+  'c-level': [10, 25],
+};
+
+function toYearNumber(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(50, Math.round(n));
+}
+
+/**
+ * Derive min/max experience years from TheirStack payload, explicit fields, text, or seniority.
+ */
+export function extractExperienceYears(job = {}) {
+  const explicitMin = toYearNumber(
+    job.minExperienceYears ??
+      job.min_experience_years ??
+      job.min_years_experience ??
+      job.experience_min ??
+      job.years_experience_min ??
+      job.min_years
+  );
+  const explicitMax = toYearNumber(
+    job.maxExperienceYears ??
+      job.max_experience_years ??
+      job.max_years_experience ??
+      job.experience_max ??
+      job.years_experience_max ??
+      job.max_years
+  );
+
+  if (explicitMin != null || explicitMax != null) {
+    let min = explicitMin;
+    let max = explicitMax;
+    if (min != null && max != null && min > max) [min, max] = [max, min];
+    return { minExperienceYears: min, maxExperienceYears: max };
+  }
+
+  const text = `${job.job_title || job.jobTitle || ''} ${job.description || ''}`.toLowerCase();
+  const rangeMatch = text.match(/(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*\+?\s*years?/);
+  if (rangeMatch) {
+    let min = toYearNumber(rangeMatch[1]);
+    let max = toYearNumber(rangeMatch[2]);
+    if (min != null && max != null && min > max) [min, max] = [max, min];
+    return { minExperienceYears: min, maxExperienceYears: max };
+  }
+
+  const plusMatch = text.match(/(\d{1,2})\s*\+\s*years?/);
+  if (plusMatch) {
+    const min = toYearNumber(plusMatch[1]);
+    return { minExperienceYears: min, maxExperienceYears: null };
+  }
+
+  const atLeastMatch = text.match(/(?:at least|minimum of|min(?:imum)?)\s*(\d{1,2})\s*years?/);
+  if (atLeastMatch) {
+    return { minExperienceYears: toYearNumber(atLeastMatch[1]), maxExperienceYears: null };
+  }
+
+  const seniorityKey = String(job.seniority || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  const band = SENIORITY_EXPERIENCE_YEARS[seniorityKey];
+  if (band) {
+    return { minExperienceYears: band[0], maxExperienceYears: band[1] };
+  }
+
+  return { minExperienceYears: null, maxExperienceYears: null };
+}
+
 export function mapTheirStackJob(job, { companyId, searchProfileId }) {
   const applyUrl = job.url || '';
   const finalUrl = job.final_url || '';
@@ -24,6 +108,7 @@ export function mapTheirStackJob(job, { companyId, searchProfileId }) {
   const urlDomain =
     extractJobUrlDomain(applyUrl, sourceUrl, finalUrl) ||
     (job.company_object?.domain || job.company_domain || '').toLowerCase();
+  const experience = extractExperienceYears(job);
 
   return {
     theirstackJobId: job.id,
@@ -39,6 +124,8 @@ export function mapTheirStackJob(job, { companyId, searchProfileId }) {
     remote: !!job.remote,
     hybrid: !!job.hybrid,
     seniority: job.seniority || '',
+    minExperienceYears: experience.minExperienceYears,
+    maxExperienceYears: experience.maxExperienceYears,
     technologySlugs: job.technology_slugs || [],
     salaryMinUsd: job.min_annual_salary_usd ?? null,
     salaryMaxUsd: job.max_annual_salary_usd ?? null,
@@ -72,6 +159,8 @@ export function scrapedJobToJSON(doc) {
     remote: o.remote,
     hybrid: o.hybrid,
     seniority: o.seniority,
+    minExperienceYears: o.minExperienceYears ?? null,
+    maxExperienceYears: o.maxExperienceYears ?? null,
     technologySlugs: o.technologySlugs,
     salaryMinUsd: o.salaryMinUsd,
     salaryMaxUsd: o.salaryMaxUsd,

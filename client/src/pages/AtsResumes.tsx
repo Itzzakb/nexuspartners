@@ -1,12 +1,69 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Sparkles } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { resumeTemplateApi } from '@/lib/api';
 import { ToggleField } from '@/components/ui/Toggle';
 import type { ResumeTemplate } from '@/types/phase7';
+import { toast } from '@/lib/toast';
 
-const DEFAULT_SECTIONS = ['summary', 'experience', 'education', 'skills'];
+/** Sections the DOCX builder actually renders from form / student resume data. */
+const SECTION_OPTIONS = [
+  {
+    id: 'summary',
+    label: 'Professional Summary',
+    mapsTo: 'Form: Professional Summary',
+  },
+  {
+    id: 'experience',
+    label: 'Experience / Projects',
+    mapsTo: 'Form: Work experience, internships, or fresher projects',
+  },
+  {
+    id: 'education',
+    label: 'Education',
+    mapsTo: 'Form: Masters + Bachelors',
+  },
+  {
+    id: 'skills',
+    label: 'Technical Skills',
+    mapsTo: 'Form: Technical Skills + Relevant Coursework',
+  },
+  {
+    id: 'certifications',
+    label: 'Certifications',
+    mapsTo: 'Form: Certifications',
+  },
+] as const;
+
+const FULL_ATS_SECTIONS = SECTION_OPTIONS.map((s) => s.id);
+
+const RECOMMENDED_TEMPLATE_CONTENT = `ATS Resume Template — Nexus Partners
+
+Use this section order for Build & Download:
+1. Header — Name, Preferred Role, Email, Phone, City/State, LinkedIn, Visa
+2. Professional Summary
+3. Experience (or Projects / Internships for freshers)
+4. Education
+5. Technical Skills (+ Relevant Coursework)
+6. Certifications
+
+Formatting rules:
+- Plain text friendly (no tables, text boxes, or graphics)
+- Standard section headings
+- Bullet points for responsibilities and achievements
+- Consistent date format (YYYY-MM-DD or Present)
+- Keywords from preferred role and technical skills
+
+Form fields covered:
+- Personal: preferred name, email, phone, LinkedIn, address (street/city/state/ZIP/country)
+- Experience level: experienced jobs OR fresher projects/internships
+- Education: masters + bachelors
+- Visa + arrival date
+- Professional summary, technical skills, coursework, certifications, preferred role
+`;
+
+const DEFAULT_SECTIONS = [...FULL_ATS_SECTIONS];
 
 export default function AtsResumes() {
   const { user } = useAuth();
@@ -16,7 +73,6 @@ export default function AtsResumes() {
   const [companyId, setCompanyId] = useState('');
   const [editing, setEditing] = useState<Partial<ResumeTemplate> | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -44,11 +100,38 @@ export default function AtsResumes() {
     });
   };
 
+  const applyRecommendedAts = () => {
+    setEditing((prev) => ({
+      ...(prev || {}),
+      name: prev?.name?.trim() ? prev.name : 'Full ATS Resume',
+      description:
+        prev?.description?.trim() ||
+        'Covers all resume-form fields: summary, experience/projects, education, skills, certifications',
+      sections: [...FULL_ATS_SECTIONS],
+      templateContent: RECOMMENDED_TEMPLATE_CONTENT,
+      isDefault: prev?.isDefault ?? true,
+    }));
+  };
+
+  const toggleSection = (sectionId: string) => {
+    if (!editing) return;
+    const current = editing.sections || [];
+    const next = current.includes(sectionId)
+      ? current.filter((s) => s !== sectionId)
+      : [...current, sectionId];
+    // Keep a stable order matching SECTION_OPTIONS
+    const ordered = FULL_ATS_SECTIONS.filter((id) => next.includes(id));
+    setEditing({ ...editing, sections: ordered });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing?.name) return;
+    if (!editing.sections?.length) {
+      toast.error('Select at least one section');
+      return;
+    }
     setSaving(true);
-    setError('');
     try {
       if (editing.id) {
         await resumeTemplateApi.update(editing.id, editing);
@@ -62,7 +145,7 @@ export default function AtsResumes() {
       setEditing(null);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save template');
+      toast.error(err instanceof Error ? err.message : 'Failed to save template');
     } finally {
       setSaving(false);
     }
@@ -74,7 +157,7 @@ export default function AtsResumes() {
       await resumeTemplateApi.delete(id);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
     }
   };
 
@@ -90,10 +173,6 @@ export default function AtsResumes() {
           New Template
         </button>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
 
       {user?.isPlatformAdmin && (
         <select
@@ -154,56 +233,94 @@ export default function AtsResumes() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <form onSubmit={handleSave} className="np-card my-8 w-full max-w-2xl space-y-4 p-6">
-            <h2 className="text-lg">{editing.id ? 'Edit Template' : 'New Template'}</h2>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-heading">Name</label>
-              <input
-                className="np-input"
-                value={editing.name || ''}
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                required
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form
+            onSubmit={handleSave}
+            className="np-card flex max-h-[min(92vh,900px)] w-full max-w-2xl flex-col overflow-hidden"
+          >
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
+              <h2 className="text-lg">{editing.id ? 'Edit Template' : 'New Template'}</h2>
+              <button
+                type="button"
+                className="np-btn-secondary !py-2 text-sm"
+                onClick={applyRecommendedAts}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Use full ATS preset
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-heading">Name</label>
+                <input
+                  className="np-input"
+                  value={editing.name || ''}
+                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  required
+                  placeholder="Full ATS Resume"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-heading">Description</label>
+                <input
+                  className="np-input"
+                  value={editing.description || ''}
+                  onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                  placeholder="Covers all resume-form fields for enriched ATS output"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-heading">Sections</label>
+                <p className="mb-3 text-xs text-body">
+                  Choose which sections appear in Build & Download (order is fixed for ATS readability).
+                </p>
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  {SECTION_OPTIONS.map((opt) => {
+                    const checked = (editing.sections || []).includes(opt.id);
+                    return (
+                      <label
+                        key={opt.id}
+                        className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-muted"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={checked}
+                          onChange={() => toggleSection(opt.id)}
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-heading">{opt.label}</span>
+                          <span className="block text-xs text-body">{opt.mapsTo}</span>
+                          <span className="mt-0.5 block font-mono text-[11px] text-body">{opt.id}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-body">
+                  Selected: {(editing.sections || []).join(' → ') || 'none'}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-heading">Template content</label>
+                <textarea
+                  className="np-input min-h-[140px] font-mono text-xs"
+                  value={editing.templateContent || ''}
+                  onChange={(e) => setEditing({ ...editing, templateContent: e.target.value })}
+                  placeholder="ATS formatting instructions or template body..."
+                />
+              </div>
+              <ToggleField
+                label="Set as default template"
+                checked={!!editing.isDefault}
+                onChange={(checked) => setEditing({ ...editing, isDefault: checked })}
               />
             </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-heading">Description</label>
-              <input
-                className="np-input"
-                value={editing.description || ''}
-                onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-heading">
-                Sections (comma-separated)
-              </label>
-              <input
-                className="np-input"
-                value={(editing.sections || []).join(', ')}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    sections: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-                  })
-                }
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-heading">Template content</label>
-              <textarea
-                className="np-input min-h-[200px] font-mono text-xs"
-                value={editing.templateContent || ''}
-                onChange={(e) => setEditing({ ...editing, templateContent: e.target.value })}
-                placeholder="ATS formatting instructions or template body..."
-              />
-            </div>
-            <ToggleField
-              label="Set as default template"
-              checked={!!editing.isDefault}
-              onChange={(checked) => setEditing({ ...editing, isDefault: checked })}
-            />
-            <div className="flex gap-3">
+
+            <div className="flex shrink-0 gap-3 border-t border-border bg-surface px-6 py-4">
               <button type="submit" className="np-btn-primary" disabled={saving}>
                 {saving ? 'Saving...' : 'Save'}
               </button>

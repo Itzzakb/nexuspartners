@@ -28,6 +28,7 @@ export interface Ticket {
   dueDate: string | null;
   notes: string;
   chatLink: string;
+  studentId: string | null;
   studentPhone: string;
   studentProfileLink: string;
   currentStage: TicketStage;
@@ -45,13 +46,19 @@ export interface Ticket {
   sendBackReason: string;
   resumeFormToken: string;
   resumeFormStatus: 'unfilled' | 'partial' | 'completed';
+  resumeFormStatusStored?: 'unfilled' | 'partial' | 'completed';
   resumeFormEditEnabled?: boolean;
   resumeFormData?: import('@/types/resumeForm').ResumeFormData | null;
   resumeFormRows?: [string, string][];
   resumeFormViewLink?: string;
   resumeFormLink: string;
+  recruiterUsername?: string;
+  recruiterName?: string;
   isDeleted: boolean;
   deleteReason: string;
+  deletedBy?: string | null;
+  deletedByName?: string;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

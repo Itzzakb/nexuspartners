@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Briefcase, Download, Loader2 } from 'lucide-react';
 import { recruiterStudentsApi, recruiterResumeApi } from '@/lib/recruiterApi';
+import { toast } from '@/lib/toast';
 import type { RecruiterStudentDetail } from '@/types/recruiterPortal';
 
 function ActivityCard({ label, value }: { label: string; value: number }) {
@@ -22,8 +23,7 @@ export default function RecruiterStudentDetail() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!decodedPhone) return;
@@ -34,19 +34,18 @@ export default function RecruiterStudentDetail() {
         setStudent(data.student);
         setNotes(data.student.notes || '');
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load student'))
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Failed to load student'))
       .finally(() => setLoading(false));
   }, [decodedPhone]);
 
   const handleSaveNotes = async () => {
     if (!decodedPhone) return;
     setSaving(true);
-    setMessage('');
     try {
       await recruiterStudentsApi.updateNotes(decodedPhone, notes);
-      setMessage('Notes saved');
+      toast.success('Notes saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save notes');
+      toast.error(err instanceof Error ? err.message : 'Failed to save notes');
     } finally {
       setSaving(false);
     }
@@ -55,18 +54,16 @@ export default function RecruiterStudentDetail() {
   const handleDownloadResume = async () => {
     if (!decodedPhone) return;
     setDownloading(true);
-    setError('');
-    setMessage('');
     try {
       const data = await recruiterResumeApi.downloadStudentResume(decodedPhone);
       if (data.downloadUrl) {
         window.open(data.downloadUrl, '_blank', 'noopener,noreferrer');
-        setMessage('Resume download started');
+        toast.success('Resume download started');
       } else {
-        setMessage(data.mock ? 'Resume build requested (dev mock)' : 'Resume build completed');
+        toast.error('Resume was built but no download URL was returned');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download resume');
+      toast.error(err instanceof Error ? err.message : 'Failed to download resume');
     } finally {
       setDownloading(false);
     }
@@ -81,7 +78,7 @@ export default function RecruiterStudentDetail() {
   }
 
   if (!student) {
-    return <p className="text-body">{error || 'Student not found'}</p>;
+    return <p className="text-body">{loadError || 'Student not found'}</p>;
   }
 
   const details = student.details as Record<string, unknown>;
@@ -102,17 +99,6 @@ export default function RecruiterStudentDetail() {
         Back to My Students
       </Link>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-
       <div className="np-card p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -120,7 +106,7 @@ export default function RecruiterStudentDetail() {
             <p className="mt-1 text-body">
               {student.phone} · {student.companyLabel}
             </p>
-            {(student.email || details.email) && (
+            {Boolean(student.email || details.email) && (
               <p className="text-sm text-body">{String(student.email || details.email)}</p>
             )}
             {student.role && <p className="text-sm text-body">Role: {student.role}</p>}

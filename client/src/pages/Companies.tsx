@@ -2,14 +2,13 @@ import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { companyApi, uploadFile } from '@/lib/api';
+import { toast } from '@/lib/toast';
 
 export default function Companies() {
   const { user } = useAuth();
   const { companies, loading, refreshCompanies } = useCompanies();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', slug: '', appTitle: '', website: '' });
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
 
   if (!user?.isPlatformAdmin) {
     return <p className="text-body">Platform admin access required.</p>;
@@ -17,15 +16,14 @@ export default function Companies() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     try {
       await companyApi.create(form);
-      setMessage('Company created');
+      toast.success('Company created');
       setForm({ name: '', slug: '', appTitle: '', website: '' });
       setShowForm(false);
       refreshCompanies();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create company');
+      toast.error(err instanceof Error ? err.message : 'Failed to create company');
     }
   };
 
@@ -33,10 +31,10 @@ export default function Companies() {
     try {
       const result = await uploadFile(file, 'companies');
       await companyApi.update(companyId, { logoUrl: result.url, logoPublicId: result.publicId });
-      setMessage('Logo updated');
+      toast.success('Logo updated');
       refreshCompanies();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
     }
   };
 
@@ -51,17 +49,6 @@ export default function Companies() {
           {showForm ? 'Cancel' : 'Add company'}
         </button>
       </div>
-
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       {showForm && (
         <form onSubmit={handleCreate} className="np-card space-y-4 p-6">

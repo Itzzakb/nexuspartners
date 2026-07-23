@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { companyApi, uploadFile, type Company } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { AppLogo } from '@/components/ui/AppLogo';
+import { PAYMENT_CURRENCIES } from '@/types/payment';
 
 export default function Settings() {
   const { user, company, setCompany } = useAuth();
   const [form, setForm] = useState<Partial<Company>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     companyApi
@@ -19,7 +20,7 @@ export default function Settings() {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load settings');
+        setLoadError(err instanceof Error ? err.message : 'Failed to load settings');
         setLoading(false);
       });
   }, []);
@@ -27,15 +28,13 @@ export default function Settings() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setMessage('');
-    setError('');
     try {
       const data = await companyApi.updateMy(form);
       setForm(data.company);
       setCompany(data.company);
-      setMessage('Settings saved successfully');
+      toast.success('Settings saved successfully');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setSaving(false);
     }
@@ -52,7 +51,7 @@ export default function Settings() {
         setForm((f) => ({ ...f, faviconUrl: result.url, faviconPublicId: result.publicId }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
     }
   };
 
@@ -64,23 +63,16 @@ export default function Settings() {
     );
   }
 
+  if (loadError) {
+    return <p className="text-body">{loadError}</p>;
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-3xl">Settings</h1>
         <p className="mt-1 text-body">Manage your company branding and preferences</p>
       </div>
-
-      {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       <form onSubmit={handleSave} className="space-y-6">
         <div className="np-card p-6 space-y-4">
@@ -212,7 +204,10 @@ export default function Settings() {
 
         {(user?.isCompanyAdmin || user?.isPlatformAdmin) && (
           <div className="np-card space-y-4 p-6">
-            <h2 className="text-lg">Billing & salaries</h2>
+            <h2 className="text-lg">Billing</h2>
+            <p className="text-sm text-body">
+              Default currency for student billing, manual payments, payment links, and subscriptions.
+            </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-heading">Bill rate per day</label>
@@ -225,12 +220,16 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-heading">Salary currency</label>
-                <input
-                  className="np-input"
-                  value={form.salaryCurrency || 'INR'}
-                  onChange={(e) => setForm({ ...form, salaryCurrency: e.target.value })}
-                />
+                <label className="mb-1.5 block text-sm font-medium text-heading">Billing currency</label>
+                <select
+                  className="np-input w-full"
+                  value={form.billingCurrency || 'INR'}
+                  onChange={(e) => setForm({ ...form, billingCurrency: e.target.value })}
+                >
+                  {PAYMENT_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
               </div>
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-sm font-medium text-heading">
@@ -248,6 +247,25 @@ export default function Settings() {
                   placeholder="Demo, Test User"
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {(user?.isCompanyAdmin || user?.isPlatformAdmin) && (
+          <div className="np-card space-y-4 p-6">
+            <h2 className="text-lg">Salaries</h2>
+            <p className="text-sm text-body">Default currency for employee salary records.</p>
+            <div className="max-w-md">
+              <label className="mb-1.5 block text-sm font-medium text-heading">Salary currency</label>
+              <select
+                className="np-input w-full"
+                value={form.salaryCurrency || 'INR'}
+                onChange={(e) => setForm({ ...form, salaryCurrency: e.target.value })}
+              >
+                {PAYMENT_CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.label}</option>
+                ))}
+              </select>
             </div>
           </div>
         )}

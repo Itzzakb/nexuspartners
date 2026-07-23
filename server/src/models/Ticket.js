@@ -33,6 +33,7 @@ const ticketSchema = new mongoose.Schema(
     dueDate: { type: Date, default: null },
     notes: { type: String, default: '' },
     chatLink: { type: String, default: '' },
+    studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', default: null },
     studentPhone: { type: String, default: '' },
     studentProfileLink: { type: String, default: '' },
     currentStage: {
@@ -76,5 +77,6 @@ const ticketSchema = new mongoose.Schema(
 ticketSchema.index({ companyId: 1, currentStage: 1, isDeleted: 1 });
 ticketSchema.index({ assignedTo: 1, isDeleted: 1 });
 ticketSchema.index({ ticketType: 1, currentStage: 1 });
+ticketSchema.index({ companyId: 1, studentId: 1 });
 
 export default mongoose.model('Ticket', ticketSchema);
