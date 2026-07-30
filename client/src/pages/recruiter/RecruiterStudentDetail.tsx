@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Briefcase, Download, Loader2 } from 'lucide-react';
 import { recruiterStudentsApi, recruiterResumeApi } from '@/lib/recruiterApi';
+import { downloadFileFromUrl } from '@/lib/downloadFile';
 import { toast } from '@/lib/toast';
 import type { RecruiterStudentDetail } from '@/types/recruiterPortal';
 
@@ -57,8 +58,8 @@ export default function RecruiterStudentDetail() {
     try {
       const data = await recruiterResumeApi.downloadStudentResume(decodedPhone);
       if (data.downloadUrl) {
-        window.open(data.downloadUrl, '_blank', 'noopener,noreferrer');
-        toast.success('Resume download started');
+        await downloadFileFromUrl(data.downloadUrl, 'Resume.docx');
+        toast.success('Resume downloaded');
       } else {
         toast.error('Resume was built but no download URL was returned');
       }

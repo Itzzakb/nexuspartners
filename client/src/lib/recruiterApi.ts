@@ -69,11 +69,28 @@ async function recruiterApi<T>(path: string, options: RequestInit = {}): Promise
 
   const data = await res.json().catch(() => ({}));
 
+  if (res.status === 401 && path !== '/auth/login') {
+    forceRecruiterLogout(true);
+    throw new ApiError(data.error || 'Session expired', 401);
+  }
+
   if (!res.ok) {
     throw new ApiError(data.error || 'Request failed', res.status);
   }
 
   return data as T;
+}
+
+/** Force logout and leave the current page when the recruiter session is invalid. */
+export function forceRecruiterLogout(redirect = true) {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(COMPANY_KEY);
+  window.dispatchEvent(new Event('recruiter-auth:session-expired'));
+  if (!redirect) return;
+  const path = window.location.pathname;
+  if (path === '/recruiter-portal/login' || path.endsWith('/recruiter-portal/login')) return;
+  if (!path.startsWith('/recruiter-portal')) return;
+  window.location.assign('/recruiter-portal/login');
 }
 
 export const recruiterAuthApi = {
@@ -250,6 +267,7 @@ export const recruiterJobsApi = {
     recruiterApi<{
       success: boolean;
       downloadUrl: string;
+      filename?: string;
       mock?: boolean;
       libraryEntry?: {
         id: string;

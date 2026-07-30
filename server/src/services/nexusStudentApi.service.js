@@ -404,6 +404,11 @@ export async function buildResumeDownload(phone, options = {}) {
   const details = await fetchStudentDetails(phone, options.companyId);
   if (!details) throw new Error('Student not found');
 
+  // Allow job-tailored resume override without mutating the student's base resume.
+  if (options.resume && typeof options.resume === 'object') {
+    details.resume = options.resume;
+  }
+
   const { buildResumeDocxBuffer, persistResumeDownload } = await import(
     './resumeDocx.service.js'
   );

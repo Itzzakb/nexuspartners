@@ -100,9 +100,66 @@ function getToken() {
   return localStorage.getItem('accessToken');
 }
 
+function clearAdminSession() {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('company');
+}
+
+/** Force logout and leave the current page when the session is no longer valid. */
+export function forceAdminLogout(redirect = true) {
+  clearAdminSession();
+  window.dispatchEvent(new Event('auth:session-expired'));
+  if (!redirect) return;
+  const path = window.location.pathname;
+  if (path === '/login' || path === '/register' || path.startsWith('/reset-password')) return;
+  if (path.startsWith('/recruiter-portal')) return;
+  window.location.assign('/login');
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshAccessToken(): Promise<boolean> {
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) return false;
+
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.accessToken) return false;
+        localStorage.setItem('accessToken', data.accessToken);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+
+  return refreshPromise;
+}
+
+function isAuthPublicPath(path: string) {
+  return (
+    path === '/auth/login' ||
+    path === '/auth/register' ||
+    path === '/auth/refresh' ||
+    path === '/auth/forgot-password' ||
+    path === '/auth/reset-password' ||
+    path === '/auth/logout'
+  );
+}
+
 export async function api<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit & { _retry?: boolean } = {}
 ): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -117,12 +174,22 @@ export async function api<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const { _retry, ...fetchOptions } = options;
   const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers,
   });
 
   const data = await res.json().catch(() => ({}));
+
+  if (res.status === 401 && !_retry && !isAuthPublicPath(path)) {
+    const refreshed = await tryRefreshAccessToken();
+    if (refreshed) {
+      return api<T>(path, { ...options, _retry: true });
+    }
+    forceAdminLogout(true);
+    throw new ApiError(data.error || 'Session expired', 401);
+  }
 
   if (!res.ok) {
     throw new ApiError(data.error || 'Request failed', res.status);
@@ -150,6 +217,11 @@ export const authApi = {
       { method: 'POST', body: JSON.stringify(payload) }
     ),
   me: () => api<{ user: User; company: Company }>('/auth/me'),
+  refresh: (refreshToken: string) =>
+    api<{ accessToken: string; user: User }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    }),
   logout: (refreshToken: string) =>
     api('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
   forgotPassword: (email: string) =>

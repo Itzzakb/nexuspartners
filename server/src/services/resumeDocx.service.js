@@ -1,12 +1,12 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   LevelFormat,
   Packer,
   Paragraph,
   TextRun,
   TabStopType,
-  TabStopPosition,
 } from 'docx';
 import crypto from 'crypto';
 import fs from 'fs/promises';
@@ -15,12 +15,15 @@ import { fileURLToPath } from 'url';
 import ResumeTemplate from '../models/ResumeTemplate.js';
 import { isCloudinaryConfigured, uploadBuffer } from './cloudinary.service.js';
 import { enrichResumeForDownload } from './resumeEnrich.service.js';
+import { ATS_RESUME_TEMPLATE } from '../constants/atsResumeTemplate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, '../../uploads/resumes');
 
 /** Match client sample ATS resumes (e.g. Sravani Yedoti). */
 const FONT = 'Times New Roman';
+/** US Letter (12240) minus 0.75" left/right margins (720 each) — right-tab for dates. */
+const CONTENT_WIDTH_TWIPS = 10800;
 const SIZE_NAME = 32; // 16pt
 const SIZE_BODY = 22; // 11pt
 const SIZE_HEADING = 22; // 11pt bold
@@ -52,7 +55,7 @@ function stripLeadingBullet(text) {
 function sectionHeading(text) {
   const label = String(text).replace(/:$/, '').trim().toUpperCase();
   return new Paragraph({
-    spacing: { before: 240, after: 80 },
+    spacing: { before: 160, after: 60 },
     children: [
       new TextRun({
         text: `${label}:`,
@@ -69,7 +72,7 @@ function sectionHeading(text) {
 function sectionHeadingTitleCase(text) {
   const label = String(text).replace(/:$/, '').trim();
   return new Paragraph({
-    spacing: { before: 240, after: 80 },
+    spacing: { before: 160, after: 60 },
     children: [
       new TextRun({
         text: `${label}:`,
@@ -117,7 +120,7 @@ function bullet(text, { boldPrefix = '', boldAll = false } = {}) {
   }
 
   return new Paragraph({
-    spacing: { after: 60, line: 276 },
+    spacing: { after: 40, line: 264 },
     numbering: { reference: BULLET_REF, level: 0 },
     children,
   });
@@ -126,7 +129,379 @@ function bullet(text, { boldPrefix = '', boldAll = false } = {}) {
 function resolveResume(details, options = {}) {
   const { resume, contactExtras } = enrichResumeForDownload(details, options);
   if (options.jobtitle) resume.jobtitle = clean(options.jobtitle) || resume.jobtitle;
-  return { resume, contactExtras };
+  // ATS exports: preserve full base summary / experience / skills (Fix Resume policy).
+  return {
+    resume: fitResumeToAtsPageBudget(resume, {
+      jobTitle: options.jobtitle || resume.jobtitle || details.role || '',
+      jobDescription: options.jobdescription || options.jobDescription || '',
+    }),
+    contactExtras,
+  };
+}
+
+/**
+ * Keep base summary / experience / skills intact for ATS export.
+ * Only normalize visibility/cleanup; do not cap or drop those sections for page budget.
+ * (Client Fix Resume policy: preserve base content; skills may only grow.)
+ */
+export function fitResumeToAtsPageBudget(resume = {}, _jobContext = {}) {
+  return {
+    ...resume,
+    professionalsummary_points: (resume.professionalsummary_points || [])
+      .filter(pointVisible)
+      .map((p) => ({ ...p, point: clean(p.point) })),
+    techinicalskills: (resume.techinicalskills || [])
+      .filter((s) => clean(s.skill_title) || clean(s.skills))
+      .map((s) => ({ ...s, skills: clean(s.skills), skill_title: clean(s.skill_title) })),
+    experience: (resume.experience || [])
+      .filter(isVisible)
+      .map((exp) => ({
+        ...exp,
+        points: (exp.points || [])
+          .filter(pointVisible)
+          .map((p) => ({ ...p, point: clean(p.point) })),
+      })),
+    education: (resume.education || []).filter(isVisible),
+    certifications: (resume.certifications || []).filter(
+      (c) => c && c.visible !== false && clean(c.certification_title)
+    ),
+  };
+}
+
+function roleBulletFloor(roleIndex, floors = false) {
+  const list = floors
+    ? ATS_RESUME_TEMPLATE.floors.experienceBulletsByRole
+    : ATS_RESUME_TEMPLATE.experienceBulletsByRole;
+  if (roleIndex < list.length) return list[roleIndex];
+  return floors
+    ? ATS_RESUME_TEMPLATE.floors.minExtraRoleBullets
+    : ATS_RESUME_TEMPLATE.minExtraRoleBullets;
+}
+
+/** When clearly over template density, prefer template targets before page-trim. */
+function shapeTowardAtsTemplate(resume, jobContext = {}) {
+  const jobTokens = buildJobTokenSet(jobContext);
+  const next = {
+    ...resume,
+    professionalsummary_points: [...(resume.professionalsummary_points || [])],
+    techinicalskills: [...(resume.techinicalskills || [])],
+    experience: (resume.experience || []).map((exp) => ({
+      ...exp,
+      points: [...(exp.points || [])],
+    })),
+    education: [...(resume.education || [])],
+    certifications: [...(resume.certifications || [])],
+  };
+
+  const targetSummary = ATS_RESUME_TEMPLATE.summaryBullets;
+  if (next.professionalsummary_points.length > targetSummary + 2) {
+    next.professionalsummary_points = rankByAtsRelevance(
+      next.professionalsummary_points,
+      (p) => p.point,
+      jobTokens
+    ).slice(0, Math.max(targetSummary, ATS_RESUME_TEMPLATE.floors.summaryBullets));
+  }
+
+  const targetSkills = ATS_RESUME_TEMPLATE.skillCategories;
+  if (next.techinicalskills.length > targetSkills + 2) {
+    next.techinicalskills = rankByAtsRelevance(
+      next.techinicalskills,
+      (s) => [clean(s.skill_title), clean(s.skills)].filter(Boolean).join(' '),
+      jobTokens
+    ).slice(0, Math.max(targetSkills, ATS_RESUME_TEMPLATE.floors.skillCategories));
+  }
+
+  next.experience = next.experience.map((exp, idx) => {
+    const maxBullets = roleBulletFloor(idx, false);
+    if ((exp.points || []).length <= maxBullets + 2) return exp;
+    return {
+      ...exp,
+      points: rankByAtsRelevance(exp.points || [], (p) => p.point, jobTokens).slice(
+        0,
+        Math.max(maxBullets, roleBulletFloor(idx, true))
+      ),
+    };
+  });
+
+  if (next.education.length > ATS_RESUME_TEMPLATE.educationEntries + 1) {
+    next.education = next.education.slice(0, ATS_RESUME_TEMPLATE.educationEntries);
+  }
+
+  return next;
+}
+
+function rankByAtsRelevance(items, textFn, jobTokens) {
+  return [...items]
+    .map((item, index) => ({
+      item,
+      index,
+      score: atsRelevanceScore(textFn(item), jobTokens),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((row) => row.item);
+}
+
+function estimateWrappedLines(text, charsPerLine = 92) {
+  const s = clean(text);
+  if (!s) return 0;
+  return Math.max(1, Math.ceil(s.length / charsPerLine));
+}
+
+function estimateResumeLines(resume) {
+  let lines = 6; // name + email + phone + title + spacing
+
+  const summary = (resume.professionalsummary_points || []).filter(pointVisible);
+  if (summary.length) {
+    lines += 2;
+    for (const p of summary) lines += estimateWrappedLines(p.point);
+  }
+
+  const skills = (resume.techinicalskills || []).filter(
+    (s) => clean(s.skill_title) || clean(s.skills)
+  );
+  if (skills.length) {
+    lines += 2;
+    for (const s of skills) {
+      lines += estimateWrappedLines(
+        [clean(s.skill_title), clean(s.skills)].filter(Boolean).join(' - ')
+      );
+    }
+  }
+
+  const experience = (resume.experience || []).filter(isVisible);
+  if (experience.length) {
+    lines += 2;
+    for (const exp of experience) {
+      lines += 3; // company/dates + role + Responsibilities:
+      for (const p of (exp.points || []).filter(pointVisible)) {
+        lines += estimateWrappedLines(p.point);
+      }
+    }
+  }
+
+  const education = (resume.education || []).filter(isVisible);
+  if (education.length) {
+    lines += 2;
+    lines += education.length * 2;
+  }
+
+  const certs = (resume.certifications || []).filter(
+    (c) => c && c.visible !== false && clean(c.certification_title)
+  );
+  if (certs.length) {
+    lines += 2;
+    for (const c of certs) lines += estimateWrappedLines(c.certification_title);
+  }
+
+  return lines;
+}
+
+const ATS_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'of',
+  'to',
+  'in',
+  'on',
+  'for',
+  'with',
+  'by',
+  'at',
+  'from',
+  'as',
+  'is',
+  'are',
+  'be',
+  'this',
+  'that',
+  'will',
+  'you',
+  'your',
+  'our',
+  'we',
+  'they',
+  'their',
+  'using',
+  'used',
+  'work',
+  'works',
+  'working',
+  'team',
+  'experience',
+  'years',
+  'year',
+  'role',
+  'job',
+  'ability',
+  'strong',
+  'good',
+  'including',
+  'etc',
+]);
+
+function tokenizeForAts(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9+#.]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && !ATS_STOP_WORDS.has(t));
+}
+
+function atsRelevanceScore(text, jobTokens) {
+  const tokens = tokenizeForAts(text);
+  if (!tokens.length) return 0;
+  if (!jobTokens.size) return 0.25; // no JD: treat as weakly required; prefer keeping earlier items via index bias elsewhere
+  let hits = 0;
+  for (const t of tokens) {
+    if (jobTokens.has(t)) hits += 1;
+  }
+  return hits / tokens.length;
+}
+
+function buildJobTokenSet(jobContext = {}) {
+  const blob = `${jobContext.jobTitle || ''} ${jobContext.jobDescription || ''}`;
+  return new Set(tokenizeForAts(blob));
+}
+
+/**
+ * Over page budget: remove bullets/skills least required for the ATS job match.
+ * Keep certifications and every experience role (including older roles).
+ */
+function trimNonRequiredAtsBullets(resume, maxLines, jobContext = {}) {
+  const jobTokens = buildJobTokenSet(jobContext);
+  const next = {
+    ...resume,
+    professionalsummary_points: [...(resume.professionalsummary_points || [])],
+    techinicalskills: [...(resume.techinicalskills || [])],
+    experience: (resume.experience || []).map((exp) => ({
+      ...exp,
+      points: [...(exp.points || [])],
+    })),
+    education: [...(resume.education || [])],
+    certifications: [...(resume.certifications || [])],
+  };
+
+  const stillOver = () => estimateResumeLines(next) > maxLines;
+
+  const removable = [];
+
+  next.professionalsummary_points.forEach((p, index) => {
+    removable.push({
+      kind: 'summary',
+      index,
+      score: atsRelevanceScore(p.point, jobTokens),
+      // Prefer cutting later/weaker items when scores tie
+      order: index,
+    });
+  });
+
+  next.experience.forEach((exp, expIndex) => {
+    (exp.points || []).forEach((p, pointIndex) => {
+      removable.push({
+        kind: 'experience',
+        expIndex,
+        pointIndex,
+        score: atsRelevanceScore(p.point, jobTokens),
+        order: expIndex * 100 + pointIndex,
+      });
+    });
+  });
+
+  next.techinicalskills.forEach((s, index) => {
+    const text = [clean(s.skill_title), clean(s.skills)].filter(Boolean).join(' ');
+    removable.push({
+      kind: 'skill',
+      index,
+      score: atsRelevanceScore(text, jobTokens),
+      order: index,
+    });
+  });
+
+  // Lowest ATS relevance first; never touch certs / roles / education here.
+  removable.sort((a, b) => a.score - b.score || b.order - a.order);
+
+  const removedSummary = new Set();
+  const removedSkills = new Set();
+  const removedExpPoints = new Map(); // expIndex -> Set(pointIndex)
+
+  for (const item of removable) {
+    if (!stillOver()) break;
+
+    if (item.kind === 'summary') {
+      const kept = next.professionalsummary_points.filter((_, i) => !removedSummary.has(i)).length;
+      if (kept <= ATS_RESUME_TEMPLATE.floors.summaryBullets) continue;
+      removedSummary.add(item.index);
+    } else if (item.kind === 'skill') {
+      const kept = next.techinicalskills.filter((_, i) => !removedSkills.has(i)).length;
+      if (kept <= ATS_RESUME_TEMPLATE.floors.skillCategories) continue;
+      removedSkills.add(item.index);
+    } else if (item.kind === 'experience') {
+      const points = next.experience[item.expIndex]?.points || [];
+      const removedSet = removedExpPoints.get(item.expIndex) || new Set();
+      const kept = points.filter((_, i) => !removedSet.has(i)).length;
+      if (kept <= roleBulletFloor(item.expIndex, true)) continue;
+      removedSet.add(item.pointIndex);
+      removedExpPoints.set(item.expIndex, removedSet);
+    }
+  }
+
+  next.professionalsummary_points = next.professionalsummary_points.filter(
+    (_, i) => !removedSummary.has(i)
+  );
+  next.techinicalskills = next.techinicalskills.filter((_, i) => !removedSkills.has(i));
+  next.experience = next.experience.map((exp, expIndex) => {
+    const removedSet = removedExpPoints.get(expIndex);
+    if (!removedSet?.size) return exp;
+    return {
+      ...exp,
+      points: (exp.points || []).filter((_, i) => !removedSet.has(i)),
+    };
+  });
+
+  // Last resort: keep cutting lowest-ATS-relevance bullets only — never roles/certs.
+  while (stillOver()) {
+    let cut = false;
+
+    if (next.professionalsummary_points.length > ATS_RESUME_TEMPLATE.floors.summaryBullets) {
+      let worstIdx = 0;
+      let worstScore = Infinity;
+      next.professionalsummary_points.forEach((p, i) => {
+        const score = atsRelevanceScore(p.point, jobTokens);
+        if (score < worstScore) {
+          worstScore = score;
+          worstIdx = i;
+        }
+      });
+      next.professionalsummary_points.splice(worstIdx, 1);
+      cut = true;
+    }
+
+    if (!stillOver()) break;
+
+    let worst = null;
+    next.experience.forEach((exp, expIndex) => {
+      const points = exp.points || [];
+      const minKeep = roleBulletFloor(expIndex, true);
+      if (points.length <= minKeep) return;
+      points.forEach((p, pointIndex) => {
+        const score = atsRelevanceScore(p.point, jobTokens);
+        if (!worst || score < worst.score) {
+          worst = { expIndex, pointIndex, score };
+        }
+      });
+    });
+    if (worst) {
+      next.experience[worst.expIndex].points.splice(worst.pointIndex, 1);
+      cut = true;
+    }
+
+    if (!cut) break;
+  }
+
+  return next;
 }
 
 function labeledContactLine(label, value) {
@@ -159,12 +534,12 @@ function buildExperienceParagraphs(resume) {
     const dates = [clean(exp.start), clean(exp.end)].filter(Boolean).join(' – ');
     const role = clean(exp.position);
 
-    // Company + dates on one line (dates right-aligned via tab), both bold — sample style
+    // Company left + dates right on one line (right tab at content edge)
     if (company || dates) {
       paras.push(
         new Paragraph({
-          spacing: { before: 160, after: 40 },
-          tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.RIGHT }],
+          spacing: { before: 120, after: 40 },
+          tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_WIDTH_TWIPS }],
           children: [
             new TextRun({
               text: company || 'Experience',
@@ -212,7 +587,7 @@ function buildExperienceParagraphs(resume) {
 function buildEducationParagraphs(resume) {
   const items = (resume.education || []).filter(isVisible);
   if (!items.length) return [];
-  const paras = [sectionHeadingTitleCase('Educational Details')];
+  const paras = [sectionHeading('Education')];
 
   for (const edu of items) {
     const degree = clean(edu.education_title);
@@ -298,8 +673,7 @@ const SECTION_BUILDERS = {
 };
 
 async function resolveSections(templateId, companyId) {
-  // Sample order: Summary → Skills → Experience → Education
-  const defaults = ['summary', 'skills', 'experience', 'education', 'certifications'];
+  const defaults = [...ATS_RESUME_TEMPLATE.sectionOrder];
   if (!templateId && !companyId) return defaults;
 
   let template = null;
@@ -313,7 +687,9 @@ async function resolveSections(templateId, companyId) {
   const fromTemplate = template.sections
     .map((s) => String(s).toLowerCase().trim())
     .filter((s) => SECTION_BUILDERS[s]);
-  if (!fromTemplate.includes('certifications')) fromTemplate.push('certifications');
+  if (!fromTemplate.includes('certifications') && SECTION_BUILDERS.certifications) {
+    fromTemplate.push('certifications');
+  }
   return fromTemplate.length ? fromTemplate : defaults;
 }
 
@@ -342,16 +718,32 @@ export async function buildResumeDocxBuffer(details, options = {}) {
 
   const email = clean(details.email);
   const phone = clean(details.phone || details.mobile);
-  const emailLine = labeledContactLine('Email', email);
-  const phoneLine = labeledContactLine('Mobile', phone);
-  if (emailLine) children.push(emailLine);
-  if (phoneLine) children.push(phoneLine);
+  if (email || phone) {
+    const parts = [];
+    if (email) {
+      parts.push(new TextRun({ text: 'Email: ', bold: true, size: SIZE_BODY, font: FONT }));
+      parts.push(new TextRun({ text: email, size: SIZE_BODY, font: FONT }));
+    }
+    if (email && phone) {
+      parts.push(new TextRun({ text: ' | ', size: SIZE_BODY, font: FONT }));
+    }
+    if (phone) {
+      parts.push(new TextRun({ text: 'Mobile: ', bold: true, size: SIZE_BODY, font: FONT }));
+      parts.push(new TextRun({ text: phone, size: SIZE_BODY, font: FONT }));
+    }
+    children.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        children: parts,
+      })
+    );
+  }
 
   if (jobTitle) {
     children.push(
       new Paragraph({
         alignment: AlignmentType.LEFT,
-        spacing: { before: 60, after: 120 },
+        spacing: { before: 60, after: 60 },
         children: [
           new TextRun({
             text: jobTitle,
@@ -364,6 +756,22 @@ export async function buildResumeDocxBuffer(details, options = {}) {
       })
     );
   }
+
+  // Horizontal rule between profile header and Professional Summary
+  children.push(
+    new Paragraph({
+      spacing: { before: 40, after: 160 },
+      border: {
+        bottom: {
+          color: '000000',
+          space: 1,
+          style: BorderStyle.SINGLE,
+          size: 12,
+        },
+      },
+      children: [],
+    })
+  );
 
   for (const key of sections) {
     children.push(...SECTION_BUILDERS[key](resume));

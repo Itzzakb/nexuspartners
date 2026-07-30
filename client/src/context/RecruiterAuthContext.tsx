@@ -60,6 +60,15 @@ export function RecruiterAuthProvider({ children }: { children: ReactNode }) {
     refreshRecruiter();
   }, [refreshRecruiter]);
 
+  useEffect(() => {
+    const onExpired = () => {
+      setRecruiter(null);
+      setCompany(null);
+    };
+    window.addEventListener('recruiter-auth:session-expired', onExpired);
+    return () => window.removeEventListener('recruiter-auth:session-expired', onExpired);
+  }, []);
+
   const login = useCallback(async (username: string, password: string) => {
     const data = await recruiterAuthApi.login(username, password);
     recruiterAuthApi.storeSession(data.accessToken, data.company);

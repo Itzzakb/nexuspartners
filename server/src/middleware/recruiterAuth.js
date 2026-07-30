@@ -11,7 +11,7 @@ export function signRecruiterAccessToken(recruiter) {
       type: 'recruiter',
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.RECRUITER_JWT_EXPIRES_IN || '12h' }
+    { expiresIn: process.env.RECRUITER_JWT_EXPIRES_IN || '30d' }
   );
 }
 

@@ -15,7 +15,7 @@ const DEFAULT_PROMPTS = [
     key: 'resume_fix_for_job',
     label: 'Fix Resume for Job (Recruiter)',
     content:
-      'Tailor the student resume JSON for the target job. Emphasize relevant skills, experience bullets, and summary keywords from the job description. Keep the same JSON schema and field names. Do not invent employers or degrees.',
+      'Preserve the base resume exactly for professional summary, experience, education, and certifications. Keep all existing technical skills. Only add skills/tools from the job description that are missing from the base technical skills (append to matching categories or add a new category). Do not rewrite or remove base content.',
   },
 ];
 
@@ -60,7 +60,17 @@ export async function updatePrompt(req, res) {
 
 export async function getPromptByKey(key) {
   const item = await AppPrompt.findOne({ key });
-  if (item) return item.content;
   const def = DEFAULT_PROMPTS.find((p) => p.key === key);
+
+  // Prefer built-in Fix Resume policy if DB still has the old "tailor/rewrite" prompt.
+  if (key === 'resume_fix_for_job') {
+    const content = String(item?.content || '').trim();
+    const looksLikePreservePolicy =
+      /preserve|keep all|only add|missing from the base|do not rewrite/i.test(content);
+    if (content && looksLikePreservePolicy) return content;
+    return def?.content || content || '';
+  }
+
+  if (item) return item.content;
   return def?.content || '';
 }

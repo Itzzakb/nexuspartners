@@ -1,3 +1,5 @@
+import { atsTemplateFixResumeInstructions } from '../constants/atsResumeTemplate.js';
+
 const NEXUS_RESUME_PARSE_URL =
   process.env.NEXUS_RESUME_PARSE_URL ||
   process.env.FUTUREFLUX_RESUME_PARSE_URL ||
@@ -150,6 +152,127 @@ function pickRicherParse(a, b) {
   return score(b) > score(a) ? b : a;
 }
 
+function cloneResume(resume) {
+  return JSON.parse(JSON.stringify(resume || {}));
+}
+
+function splitSkillList(skillsStr) {
+  return String(skillsStr || '')
+    .split(/[,;|]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function joinSkillList(skills) {
+  return skills.join(', ');
+}
+
+function normalizeSkillToken(skill) {
+  return String(skill || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.]/g, '');
+}
+
+/**
+ * Keep every base skill category/list; append only new skills from the model output.
+ */
+export function mergeSkillsPreservingBase(baseSkills = [], fixedSkills = []) {
+  const result = (Array.isArray(baseSkills) ? baseSkills : []).map((row) => ({
+    ...row,
+    skill_title: row?.skill_title || '',
+    skills: row?.skills || '',
+  }));
+
+  const titleIndex = new Map();
+  result.forEach((row, i) => {
+    const key = String(row.skill_title || '')
+      .trim()
+      .toLowerCase();
+    if (key) titleIndex.set(key, i);
+  });
+
+  const globalSkills = new Set();
+  result.forEach((row) => {
+    splitSkillList(row.skills).forEach((skill) => {
+      const token = normalizeSkillToken(skill);
+      if (token) globalSkills.add(token);
+    });
+  });
+
+  for (const row of Array.isArray(fixedSkills) ? fixedSkills : []) {
+    const title = String(row?.skill_title || '').trim();
+    const skillsStr = String(row?.skills || '').trim();
+    if (!title && !skillsStr) continue;
+
+    const titleKey = title.toLowerCase();
+    if (titleKey && titleIndex.has(titleKey)) {
+      const idx = titleIndex.get(titleKey);
+      const existing = splitSkillList(result[idx].skills);
+      const existingTokens = new Set(existing.map(normalizeSkillToken).filter(Boolean));
+      for (const skill of splitSkillList(skillsStr)) {
+        const token = normalizeSkillToken(skill);
+        if (!token || existingTokens.has(token) || globalSkills.has(token)) continue;
+        existing.push(skill);
+        existingTokens.add(token);
+        globalSkills.add(token);
+      }
+      result[idx] = { ...result[idx], skills: joinSkillList(existing) };
+      continue;
+    }
+
+    const newSkills = splitSkillList(skillsStr).filter((skill) => {
+      const token = normalizeSkillToken(skill);
+      return token && !globalSkills.has(token);
+    });
+    if (!newSkills.length) continue;
+
+    newSkills.forEach((skill) => globalSkills.add(normalizeSkillToken(skill)));
+    result.push({
+      ...(row && typeof row === 'object' ? row : {}),
+      skill_title: title || 'Additional Skills',
+      skills: joinSkillList(newSkills),
+    });
+    if (titleKey) titleIndex.set(titleKey, result.length - 1);
+  }
+
+  return result;
+}
+
+/**
+ * Enforce client Fix Resume policy: base summary/experience/etc. unchanged; skills may only grow.
+ */
+export function preserveBaseResumeWithAddedSkills(baseResume, fixedResume) {
+  const out = cloneResume(baseResume);
+  const fixedSkills =
+    fixedResume?.techinicalskills ||
+    fixedResume?.technicalskills ||
+    fixedResume?.technical_skills ||
+    null;
+
+  if (Array.isArray(fixedSkills)) {
+    out.techinicalskills = mergeSkillsPreservingBase(baseResume?.techinicalskills || [], fixedSkills);
+  }
+
+  // Hard restore — model must never rewrite these sections.
+  if (Array.isArray(baseResume?.professionalsummary_points)) {
+    out.professionalsummary_points = cloneResume(baseResume.professionalsummary_points);
+  }
+  if (Array.isArray(baseResume?.experience)) {
+    out.experience = cloneResume(baseResume.experience);
+  }
+  if (Array.isArray(baseResume?.education)) {
+    out.education = cloneResume(baseResume.education);
+  }
+  if (Array.isArray(baseResume?.certifications)) {
+    out.certifications = cloneResume(baseResume.certifications);
+  }
+
+  return out;
+}
+
+const DEFAULT_FIX_RESUME_INSTRUCTIONS =
+  'Preserve the base resume. Keep all professional summary bullets, experience, education, and certifications unchanged. Keep all existing technical skills. Only add skills/tools from the job description that are missing from the base technical skills.';
+
 export async function fixResumeForJob(resumeData, jobContext, instructions = '') {
   if (!resumeData || typeof resumeData !== 'object') {
     throw new Error('Student resume data not found');
@@ -161,40 +284,53 @@ export async function fixResumeForJob(resumeData, jobContext, instructions = '')
     companyName = '',
     improvements = [],
   } = jobContext;
+
+  const adminNotes = String(instructions || '').trim();
   const baseInstructions =
-    instructions ||
-    'Tailor the resume JSON for the target job. Emphasize relevant skills and experience. Keep the same JSON schema.';
+    adminNotes && /preserve|keep all|only add|missing/i.test(adminNotes)
+      ? adminNotes
+      : DEFAULT_FIX_RESUME_INSTRUCTIONS;
 
   const improvementBlock = Array.isArray(improvements) && improvements.length
-    ? `\nPriority improvements to address (ATS target score is 90+):\n${improvements
+    ? `\nOptional notes (do NOT use these to rewrite or remove base summary/experience; skills additions only if truly missing):\n${improvements
         .map((item, i) => `${i + 1}. ${String(item)}`)
         .join('\n')}\n`
     : '';
 
   const prompt = `${baseInstructions}
 ${improvementBlock}
+${atsTemplateFixResumeInstructions()}
+
 Job title: ${jobTitle}
 Company: ${companyName}
 Job description:
 ${jobDescription}
 
-Current resume JSON:
+Base resume JSON (source of truth — preserve summary, experience, education, certifications, and existing skills):
 ${JSON.stringify(resumeData, null, 2)}
 
-Return ONLY the updated resume JSON object. Keep ALL existing summary bullets and skill categories unless you are expanding them. Do not drop items.
-IMPORTANT: Do NOT change the "jobtitle" field — leave it exactly as in the current resume JSON. Tailor summary, skills, and experience wording for the job without renaming the candidate's target role.`;
+Return ONLY the full updated resume JSON object.
+IMPORTANT:
+- Do NOT change the "jobtitle" field.
+- Do NOT rewrite professionalsummary_points or experience.
+- Only augment techinicalskills with missed JD skills.`;
 
   if (!isGeminiConfigured()) {
     if (process.env.NODE_ENV !== 'production') {
-      return { resume: resumeData, source: 'mock', mock: true };
+      return {
+        resume: preserveBaseResumeWithAddedSkills(resumeData, resumeData),
+        source: 'mock',
+        mock: true,
+      };
     }
     throw new Error('Gemini API key not configured');
   }
 
-  const resume = await generateJsonWithGemini(prompt, {
-    temperature: 0.3,
+  const generated = await generateJsonWithGemini(prompt, {
+    temperature: 0.2,
     maxOutputTokens: 16384,
   });
+  const resume = preserveBaseResumeWithAddedSkills(resumeData, generated);
   return { resume, source: 'gemini' };
 }
 
@@ -219,10 +355,10 @@ Compare the candidate resume JSON to the target job and return ONLY valid JSON:
 Scoring rules:
 - Be realistic and strict. Client target is ${ATS_TARGET_SCORE}+.
 - Score below ${ATS_TARGET_SCORE} when keywords, skills, titles, or experience alignment are weak.
-- improvements must be concrete and actionable for rewriting the resume (not vague advice).
+- improvements must be concrete and actionable. Prefer missing skills/tools from the JD to add (Fix Resume only adds skills; it does not rewrite summary or experience).
 - If score is ${ATS_TARGET_SCORE} or higher, improvements may be empty or only minor polish tips (max 2).
-- If score is below ${ATS_TARGET_SCORE}, provide 3-6 prioritized improvements that would raise the score.
-- Do not invent work history that is not supported by the resume; suggest reframing/emphasis instead.
+- If score is below ${ATS_TARGET_SCORE}, provide 3-6 prioritized improvements focused on missing keywords/skills.
+- Do not invent work history that is not supported by the resume.
 
 Job title: ${jobTitle}
 Company: ${companyName}

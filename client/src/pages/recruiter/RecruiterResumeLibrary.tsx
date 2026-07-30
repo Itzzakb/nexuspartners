@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { AtsScoreCard, type AtsLibraryEntry } from '@/components/recruiter/AtsScoreCard';
+import { downloadFileFromUrl } from '@/lib/downloadFile';
 import { recruiterResumeApi } from '@/lib/recruiterApi';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -142,6 +143,25 @@ export default function RecruiterResumeLibrary() {
     }
   };
 
+  const handleDownload = async (item: LibraryItem) => {
+    if (!item.downloadUrl) {
+      toast.error('No download URL available');
+      return;
+    }
+    setActingId(item.id);
+    try {
+      await downloadFileFromUrl(
+        item.downloadUrl,
+        `${item.studentName || 'Resume'}-ATS.docx`
+      );
+      toast.success('Resume downloaded');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setActingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -219,15 +239,15 @@ export default function RecruiterResumeLibrary() {
                           <Eye className="h-4 w-4" />
                         </button>
                         {item.downloadUrl && (
-                          <a
-                            href={item.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
                             className="rounded-lg p-2 text-body hover:bg-muted hover:text-heading"
                             title="Download"
+                            disabled={actingId === item.id}
+                            onClick={() => handleDownload(item)}
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                         )}
                         <button
                           type="button"
@@ -301,15 +321,15 @@ export default function RecruiterResumeLibrary() {
                 />
               )}
               {selected.downloadUrl && (
-                <a
-                  href={selected.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
                   className="np-btn-secondary inline-flex w-full justify-center text-sm"
+                  disabled={actingId === selected.id}
+                  onClick={() => handleDownload(selected)}
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download file
-                </a>
+                </button>
               )}
             </div>
           </aside>

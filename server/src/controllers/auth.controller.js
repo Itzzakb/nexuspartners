@@ -55,7 +55,7 @@ export async function register(req, res) {
 
   const accessToken = signAccessToken(user);
     const refreshToken = signRefreshToken(user);
-    const expiresAt = new Date(Date.now() + parseDurationToMs(process.env.JWT_REFRESH_EXPIRES_IN || '7d'));
+    const expiresAt = new Date(Date.now() + parseDurationToMs(process.env.JWT_REFRESH_EXPIRES_IN || '30d'));
 
     await RefreshToken.create({
       userId: user._id,
@@ -109,7 +109,7 @@ export async function login(req, res) {
 
     const accessToken = signAccessToken(user);
     const refreshToken = signRefreshToken(user);
-    const expiresAt = new Date(Date.now() + parseDurationToMs(process.env.JWT_REFRESH_EXPIRES_IN || '7d'));
+    const expiresAt = new Date(Date.now() + parseDurationToMs(process.env.JWT_REFRESH_EXPIRES_IN || '30d'));
 
     await RefreshToken.create({
       userId: user._id,

@@ -10,6 +10,7 @@ import {
 import {
   applyBranding,
   authApi,
+  forceAdminLogout,
   type Company,
   type User,
 } from '@/lib/api';
@@ -47,7 +48,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     const token = localStorage.getItem('accessToken');
-    if (!token) {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (!token && !refreshToken) {
       setUser(null);
       setCompanyState(null);
       setLoading(false);
@@ -59,9 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(data.user);
       setCompany(data.company);
     } catch {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('company');
+      // api() already tried refresh + forceAdminLogout on 401
       setUser(null);
       setCompanyState(null);
     } finally {
@@ -72,6 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshUser();
   }, [refreshUser]);
+
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setCompanyState(null);
+    };
+    window.addEventListener('auth:session-expired', onExpired);
+    return () => window.removeEventListener('auth:session-expired', onExpired);
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -111,9 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     }
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('company');
+    forceAdminLogout(false);
     setUser(null);
     setCompanyState(null);
   }, []);

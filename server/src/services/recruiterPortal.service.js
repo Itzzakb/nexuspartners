@@ -11,7 +11,6 @@ import {
   fetchStudentDetails,
   resolveApiCompanyName,
   buildResumeDownload,
-  updateStudentResume,
   normalizePhone,
 } from './nexusStudentApi.service.js';
 import { scrapedJobToJSON, extractExperienceYears } from './jobScrap.service.js';
@@ -207,14 +206,33 @@ export async function listRecruiterStudents(
   return normalized;
 }
 
-function studentRoleKeywords(student) {
-  const role = (student.role || student.jobtitle || '').trim();
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Full-phrase role → jobTitle patterns.
+ * Keeps the whole role (not individual words), but allows spacing/punctuation
+ * variants so "gen ai" matches "GenAI" / "Gen-AI" in a title.
+ */
+function studentRoleTitlePatterns(student) {
+  const role = (student.role || student.jobtitle || '').trim().replace(/\s+/g, ' ');
   if (!role) return [];
-  const words = role
-    .split(/[\s,/|]+/)
-    .map((w) => w.trim())
-    .filter((w) => w.length > 2);
-  return [role, ...words].filter((v, i, arr) => arr.indexOf(v) === i);
+
+  const tokens = role.split(/[\s\-_\/]+/).filter(Boolean);
+  if (!tokens.length) return [];
+
+  // Tokens in order; optional space/hyphen/underscore between them
+  const flexible = tokens.map(escapeRegex).join('[\\s\\-_]*');
+  const patterns = new Set([flexible]);
+
+  // Literal variants as well (exact substring forms)
+  patterns.add(escapeRegex(role));
+  patterns.add(escapeRegex(tokens.join('')));
+  patterns.add(escapeRegex(tokens.join('-')));
+  patterns.add(escapeRegex(tokens.join(' ')));
+
+  return [...patterns].filter(Boolean);
 }
 
 function relativePostedAge(datePosted) {
@@ -377,14 +395,14 @@ export async function findJobsForStudent({
     });
   }
 
-  const keywords = studentRoleKeywords({ role: studentRole });
+  const rolePatterns = studentRoleTitlePatterns({ role: studentRole });
   const hasQuery = !!q.trim();
 
   // When searching freely, skip role matching so recruiters can find any open job
-  if (!hasQuery && keywords.length) {
+  if (!hasQuery && rolePatterns.length) {
     andClauses.push({
-      $or: keywords.map((kw) => ({
-        jobTitle: { $regex: kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+      $or: rolePatterns.map((pattern) => ({
+        jobTitle: { $regex: pattern, $options: 'i' },
       })),
     });
   }
@@ -893,7 +911,8 @@ export async function fixResumeForStudentJob({
     }
   }
 
-  const updateResult = await updateStudentResume(studentPhone, fixedResume);
+  // Do NOT overwrite the student's base resume (admin Upload / Resume tab).
+  // Tailored copy lives only in RecruiterResumeLibrary for this job.
   const now = new Date();
 
   const action = await StudentJobAction.findOneAndUpdate(
@@ -931,7 +950,6 @@ export async function fixResumeForStudentJob({
     resume: fixedResume,
     source,
     mock: !!mock,
-    updateResult,
     libraryEntry: resumeLibraryToJSON(libraryEntry),
     action: {
       resumeFixedAt: action.resumeFixedAt,
@@ -960,6 +978,21 @@ export async function downloadAtsResumeForStudentJob({
     if (defaultTemplate) resolvedTemplateId = defaultTemplate._id.toString();
   }
 
+  // Prefer job-tailored resume from library (Fix Resume); fall back to student base resume.
+  const existingLibrary = await RecruiterResumeLibrary.findOne({
+    companyId: company._id,
+    recruiterUsername: recruiter.username,
+    studentPhone,
+    scrapedJobId: job._id,
+  }).lean();
+
+  const details = await fetchStudentDetails(studentPhone).catch(() => null);
+  const baseResume = extractResumeFromStudentDetails(details);
+  const resumeForExport =
+    (existingLibrary?.resumeData && typeof existingLibrary.resumeData === 'object'
+      ? existingLibrary.resumeData
+      : null) || baseResume;
+
   const result = await buildResumeDownload(studentPhone, {
     templateId: resolvedTemplateId,
     companyId: company._id,
@@ -968,6 +1001,7 @@ export async function downloadAtsResumeForStudentJob({
     jobdescription: job.description,
     companyname: job.companyName,
     scrapedJobId: job._id.toString(),
+    resume: resumeForExport || undefined,
   });
 
   const downloadUrl =
@@ -994,7 +1028,6 @@ export async function downloadAtsResumeForStudentJob({
     );
   }
 
-  const details = await fetchStudentDetails(studentPhone).catch(() => null);
   const libraryEntry = await upsertResumeLibraryEntry({
     companyId: company._id,
     recruiterUsername: recruiter.username,
@@ -1003,15 +1036,16 @@ export async function downloadAtsResumeForStudentJob({
     scrapedJobId: job._id,
     jobTitle: job.jobTitle,
     companyName: job.companyName,
-    resumeData: extractResumeFromStudentDetails(details),
+    resumeData: resumeForExport,
     downloadUrl,
-    source: 'ats_download',
+    source: existingLibrary?.resumeData ? existingLibrary.source || 'ats_download' : 'ats_download',
     jobDescription: job.description,
   });
 
   return {
     success: true,
     downloadUrl,
+    filename: result?.filename || '',
     result,
     libraryEntry: resumeLibraryToJSON(libraryEntry),
     mock: !!result?.mock,
@@ -1048,7 +1082,13 @@ export async function downloadStudentResume(
     result?.url ||
     '';
 
-  return { success: true, downloadUrl, result, mock: !!result?.mock };
+  return {
+    success: true,
+    downloadUrl,
+    filename: result?.filename || '',
+    result,
+    mock: !!result?.mock,
+  };
 }
 
 export async function listRecruiterResumeTemplates(companyId) {

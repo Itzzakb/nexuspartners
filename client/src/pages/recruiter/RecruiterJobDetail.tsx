@@ -16,6 +16,7 @@ import {
 } from '@/components/recruiter/ApplyFormSidePanel';
 import { recruiterJobsApi, recruiterResumeApi } from '@/lib/recruiterApi';
 import { toast } from '@/lib/toast';
+import { downloadFileFromUrl } from '@/lib/downloadFile';
 import type {
   RecruiterJobApplicant,
   RecruiterResumeTemplate,
@@ -174,8 +175,8 @@ export default function RecruiterJobDetail() {
         templateId || undefined
       );
       if (data.downloadUrl) {
-        window.open(data.downloadUrl, '_blank', 'noopener,noreferrer');
-        if (!data.libraryEntry) toast.success('ATS resume download started');
+        await downloadFileFromUrl(data.downloadUrl, data.filename || 'ATS-Resume.docx');
+        toast.success('ATS resume downloaded');
       } else {
         toast.error('ATS resume was built but no download URL was returned');
       }

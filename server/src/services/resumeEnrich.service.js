@@ -272,7 +272,7 @@ function mapProjects(items) {
  * @returns {object} enriched resume JSON
  */
 export function enrichResumeForDownload(details = {}, options = {}) {
-  const raw = { ...(details.resume || options.resume || {}) };
+  const raw = { ...(options.resume || details.resume || {}) };
   const extras = detailMap(details);
 
   const resume = {
