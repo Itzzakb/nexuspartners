@@ -1,3 +1,5 @@
+import { expandUrlDomainList } from '../constants/jobScrapMaster.js';
+
 const API_BASE = 'https://api.theirstack.com';
 
 function getApiKey() {
@@ -38,8 +40,12 @@ export function buildSearchPayload(profileFilters) {
 
   if (filters.job_title_or?.length) payload.job_title_or = filters.job_title_or;
   if (filters.job_country_code_or?.length) payload.job_country_code_or = filters.job_country_code_or;
-  if (filters.url_domain_or?.length) payload.url_domain_or = filters.url_domain_or;
-  if (filters.url_domain_not?.length) payload.url_domain_not = filters.url_domain_not;
+  if (filters.url_domain_or?.length) {
+    payload.url_domain_or = expandUrlDomainList(filters.url_domain_or);
+  }
+  if (filters.url_domain_not?.length) {
+    payload.url_domain_not = expandUrlDomainList(filters.url_domain_not);
+  }
   if (filters.company_domain_or?.length) payload.company_domain_or = filters.company_domain_or;
   if (filters.job_location_ids?.length) {
     payload.job_location_or = filters.job_location_ids.map((id) => ({ id: Number(id) }));
@@ -93,19 +99,11 @@ export async function searchJobsPage(payload, page = 0) {
   return body;
 }
 
-export async function searchJobsAllPages(profileFilters, maxPages = 5) {
+export async function searchJobsAllPages(profileFilters) {
   const payload = buildSearchPayload(profileFilters);
-  const limit = payload.limit;
-  const allJobs = [];
-
-  for (let page = 0; page < maxPages; page++) {
-    const result = await searchJobsPage(payload, page);
-    const batch = result.data || [];
-    allJobs.push(...batch);
-    if (batch.length < limit) break;
-  }
-
-  return allJobs;
+  // Single page only (page 0) — total jobs/credits = profile `limit` (e.g. 10 or 25).
+  const result = await searchJobsPage(payload, 0);
+  return result.data || [];
 }
 
 async function theirStackRequest(path, { method = 'GET', body } = {}) {

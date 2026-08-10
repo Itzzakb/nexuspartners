@@ -21,6 +21,7 @@ import ResumeFormViewShare from '@/pages/ResumeFormViewShare';
 import Interviews from '@/pages/Interviews';
 import InterviewDetail from '@/pages/InterviewDetail';
 import InterviewShare from '@/pages/InterviewShare';
+import StudentShare from '@/pages/StudentShare';
 import Placements from '@/pages/Placements';
 import Teams from '@/pages/Teams';
 import MyTeam from '@/pages/MyTeam';
@@ -38,6 +39,7 @@ import SearchResume from '@/pages/SearchResume';
 import AtsResumes from '@/pages/AtsResumes';
 import PromptEditor from '@/pages/PromptEditor';
 import JobScrap from '@/pages/JobScrap';
+import JobScrapMaster from '@/pages/JobScrapMaster';
 import { RecruiterAuthProvider } from '@/context/RecruiterAuthContext';
 import { RecruiterProtectedRoute } from '@/components/recruiter/RecruiterProtectedRoute';
 import { RecruiterLayout } from '@/components/recruiter/RecruiterLayout';
@@ -65,6 +67,7 @@ export default function App() {
               <Route path="/resume-form/:ticketId" element={<ResumeFormPublic />} />
               <Route path="/resume-form-view/:token" element={<ResumeFormViewShare />} />
               <Route path="/interview-share/:token" element={<InterviewShare />} />
+              <Route path="/student-share/:token" element={<StudentShare />} />
 
               <Route
                 path="/recruiter-portal/*"
@@ -106,6 +109,7 @@ export default function App() {
                 <Route path="/interviews/:id" element={<InterviewDetail />} />
                 <Route path="/placements" element={<Placements />} />
                 <Route path="/job-scrap" element={<JobScrap />} />
+                <Route path="/job-scrap-master" element={<JobScrapMaster />} />
                 <Route path="/teams" element={<Teams />} />
                 <Route path="/my-team" element={<MyTeam />} />
                 <Route path="/recruiters" element={<Recruiters />} />

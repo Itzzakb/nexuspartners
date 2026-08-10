@@ -12,7 +12,13 @@ export const JOB_SCRAP_MASTER_DEFAULTS = [
   { category: 'job_title', value: 'Cloud Engineer', label: 'Cloud Engineer', sortOrder: 11 },
   { category: 'job_title', value: 'QA Engineer', label: 'QA Engineer', sortOrder: 12 },
   { category: 'job_title', value: 'Business Analyst', label: 'Business Analyst', sortOrder: 13 },
+  { category: 'job_title', value: 'System Analyst', label: 'System Analyst', sortOrder: 131 },
+  { category: 'job_title', value: 'Data Analyst', label: 'Data Analyst', sortOrder: 132 },
+  { category: 'job_title', value: 'Data Scientist', label: 'Data Scientist', sortOrder: 133 },
+  { category: 'job_title', value: 'Cloud Data Engineer', label: 'Cloud Data Engineer', sortOrder: 134 },
   { category: 'job_title', value: 'Product Manager', label: 'Product Manager', sortOrder: 14 },
+  { category: 'job_title', value: 'Project Manager', label: 'Project Manager', sortOrder: 141 },
+  { category: 'job_title', value: 'Scrum Master', label: 'Scrum Master', sortOrder: 142 },
   { category: 'job_title', value: 'Gen AI', label: 'Gen AI', sortOrder: 15 },
   { category: 'job_title', value: 'Generative AI Engineer', label: 'Generative AI Engineer', sortOrder: 16 },
   { category: 'job_title', value: 'AI Engineer', label: 'AI Engineer', sortOrder: 17 },
@@ -31,8 +37,16 @@ export const JOB_SCRAP_MASTER_DEFAULTS = [
   { category: 'domain', value: 'icims.com', label: 'iCIMS', sortOrder: 6 },
   { category: 'domain', value: 'smartrecruiters.com', label: 'SmartRecruiters', sortOrder: 7 },
   { category: 'domain', value: 'jobs.jobvite.com', label: 'Jobvite', sortOrder: 8 },
-  { category: 'domain', value: 'linkedin.com', label: 'LinkedIn', sortOrder: 9 },
-  { category: 'domain', value: 'indeed.com', label: 'Indeed', sortOrder: 10 },
+  { category: 'domain', value: 'linkedin.com', label: 'LinkedIn (US / global)', sortOrder: 9 },
+  { category: 'domain', value: 'uk.linkedin.com', label: 'LinkedIn UK', sortOrder: 91 },
+  { category: 'domain', value: 'ca.linkedin.com', label: 'LinkedIn Canada', sortOrder: 92 },
+  { category: 'domain', value: 'au.linkedin.com', label: 'LinkedIn Australia', sortOrder: 93 },
+  { category: 'domain', value: 'in.linkedin.com', label: 'LinkedIn India', sortOrder: 94 },
+  { category: 'domain', value: 'indeed.com', label: 'Indeed (US / global)', sortOrder: 10 },
+  { category: 'domain', value: 'indeed.co.uk', label: 'Indeed UK', sortOrder: 101 },
+  { category: 'domain', value: 'indeed.ca', label: 'Indeed Canada', sortOrder: 102 },
+  { category: 'domain', value: 'indeed.com.au', label: 'Indeed Australia', sortOrder: 103 },
+  { category: 'domain', value: 'indeed.co.in', label: 'Indeed India', sortOrder: 104 },
   { category: 'domain', value: 'glassdoor.com', label: 'Glassdoor', sortOrder: 11 },
   { category: 'domain', value: 'ziprecruiter.com', label: 'ZipRecruiter', sortOrder: 12 },
   { category: 'domain', value: 'dice.com', label: 'Dice', sortOrder: 13 },
@@ -41,4 +55,42 @@ export const JOB_SCRAP_MASTER_DEFAULTS = [
   { category: 'domain', value: 'careerbuilder.com', label: 'CareerBuilder', sortOrder: 16 },
   { category: 'domain', value: 'wellfound.com', label: 'Wellfound', sortOrder: 17 },
   { category: 'domain', value: 'otta.com', label: 'Otta', sortOrder: 18 },
+  { category: 'domain', value: 'naukri.com', label: 'Naukri', sortOrder: 105 },
+  { category: 'domain', value: 'naukri.in', label: 'Naukri India', sortOrder: 106 },
 ];
+
+/**
+ * When excluding a global board domain, also exclude focus-market country hosts
+ * (UK, USA/global, Canada, Australia, India).
+ */
+export const URL_DOMAIN_COUNTRY_VARIANTS = {
+  'linkedin.com': [
+    'uk.linkedin.com',
+    'ca.linkedin.com',
+    'au.linkedin.com',
+    'in.linkedin.com',
+  ],
+  'indeed.com': [
+    'indeed.co.uk',
+    'indeed.ca',
+    'indeed.com.au',
+    'indeed.co.in',
+  ],
+  'naukri.com': ['naukri.in'],
+  'naukri.in': ['naukri.com'],
+};
+
+export function expandUrlDomainList(domains = []) {
+  const out = new Set();
+  for (const raw of domains || []) {
+    const d = String(raw || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^www\./, '');
+    if (!d) continue;
+    out.add(d);
+    const variants = URL_DOMAIN_COUNTRY_VARIANTS[d];
+    if (variants?.length) variants.forEach((v) => out.add(v));
+  }
+  return [...out];
+}

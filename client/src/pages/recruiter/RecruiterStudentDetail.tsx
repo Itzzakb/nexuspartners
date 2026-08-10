@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Briefcase, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, Briefcase, Download, Link2, Loader2 } from 'lucide-react';
 import { recruiterStudentsApi, recruiterResumeApi } from '@/lib/recruiterApi';
 import { downloadFileFromUrl } from '@/lib/downloadFile';
+import { toPublicAppUrl } from '@/lib/publicAppUrl';
 import { toast } from '@/lib/toast';
 import type { RecruiterStudentDetail } from '@/types/recruiterPortal';
 
@@ -24,6 +25,7 @@ export default function RecruiterStudentDetail() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
@@ -67,6 +69,21 @@ export default function RecruiterStudentDetail() {
       toast.error(err instanceof Error ? err.message : 'Failed to download resume');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!decodedPhone) return;
+    setSharing(true);
+    try {
+      const data = await recruiterStudentsApi.getShareLink(decodedPhone);
+      const link = toPublicAppUrl(data.shareLink);
+      await navigator.clipboard.writeText(link);
+      toast.success('Student share link copied');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create share link');
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -114,6 +131,15 @@ export default function RecruiterStudentDetail() {
             {student.location && <p className="text-sm text-body">Location: {student.location}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="np-btn-secondary !py-2 text-sm"
+              onClick={handleCopyShareLink}
+              disabled={sharing}
+            >
+              <Link2 className="mr-2 inline h-4 w-4" />
+              {sharing ? 'Preparing...' : 'Copy student link'}
+            </button>
             <Link
               to={`/recruiter-portal/applications?student=${encodeURIComponent(student.phone)}`}
               className="np-btn-primary !py-2 text-sm"

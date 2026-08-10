@@ -17,6 +17,8 @@ import {
 import { buildResumeFromFormData } from '../services/resumeEnrich.service.js';
 import { formatFormAddress, normalizeResumeFormData } from '../constants/resumeForm.js';
 import { getStudentActivityCounts } from '../services/recruiterPortal.service.js';
+import { buildStudentShareLink as buildStudentShareLinkUtil } from '../utils/studentShare.js';
+import { listActiveJobTitles } from '../services/jobScrapMaster.service.js';
 
 async function resolveCompany(user, companyId) {
   let targetId = user.companyId._id;
@@ -482,5 +484,113 @@ export async function updateStudent(req, res) {
   }
 }
 
-// Keep resolveApiCompanyName import used by other modules via re-export if needed
+export function buildStudentShareLink(phone, req) {
+  return buildStudentShareLinkUtil(phone, req);
+}
+
+function sanitizeSharedDetails(details = {}) {
+  const raw = details && typeof details === 'object' ? details : {};
+  const skip = new Set([
+    'resume',
+    'password',
+    'resumeEmailPassword',
+    'emailPassword',
+    'ssoPassword',
+  ]);
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (skip.has(key)) continue;
+    if (value == null || value === '') continue;
+    if (typeof value === 'object') continue;
+    out[key] = String(value);
+  }
+  return out;
+}
+
+/** Authenticated: return shareable student URL (phone-based, details + apply stats). */
+export async function getStudentShareLink(req, res) {
+  try {
+    const phone = req.params.phone;
+    const company = await resolveCompany(req.user, req.query.companyId || req.body?.companyId);
+    const normalized = normalizePhone(phone);
+    const local = await Student.findOne({
+      companyId: company._id,
+      $or: [{ phoneNormalized: normalized }, { phone }],
+    });
+    if (!local) return res.status(404).json({ error: 'Student not found' });
+
+    const sharePhone = local.phone || phone;
+    const shareLink = buildStudentShareLinkUtil(sharePhone, req);
+    return res.json({
+      shareToken: sharePhone,
+      shareLink,
+    });
+  } catch (err) {
+    console.error('Student share link error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to create share link' });
+  }
+}
+
+/** Public read-only student page payload — :token is the student mobile/phone. */
+export async function getSharedStudent(req, res) {
+  try {
+    const rawPhone = decodeURIComponent(String(req.params.token || '').trim());
+    if (!rawPhone) return res.status(400).json({ error: 'Phone required' });
+
+    const normalized = normalizePhone(rawPhone);
+    const local = await Student.findOne({
+      $or: [{ phoneNormalized: normalized }, { phone: rawPhone }],
+    })
+      .sort({ status: 1, updatedAt: -1 })
+      .populate('companyId');
+    if (!local) return res.status(404).json({ error: 'Student link not found' });
+
+    const company = local.companyId;
+    const phone = local.phone;
+    let details = null;
+    try {
+      details = toExternalStudentShape(local);
+    } catch {
+      details = {
+        name: local.name,
+        phone: local.phone,
+        email: local.email,
+        role: local.role,
+      };
+    }
+
+    const activity = await getStudentActivityCounts(company._id || company, phone);
+    const location = [local.city, local.state].filter(Boolean).join(', ') || details?.city || '';
+
+    return res.json({
+      student: {
+        name: local.name || details?.name || details?.studentname || 'Student',
+        phone: local.phone,
+        email: local.email || details?.email || '',
+        role: local.role || details?.role || details?.jobtitle || '',
+        location,
+        status: local.status || 'active',
+        companyLabel: company?.name || '',
+        details: sanitizeSharedDetails(details),
+      },
+      activity,
+      companyLogo: company?.logoUrl || '',
+    });
+  } catch (err) {
+    console.error('Shared student error:', err);
+    return res.status(500).json({ error: 'Failed to load student' });
+  }
+}
+
+/** Job titles from Job Scrap Master — single source for student role dropdown. */
+export async function listJobRoles(req, res) {
+  try {
+    const company = await resolveCompany(req.user, req.query.companyId);
+    const jobroles = await listActiveJobTitles(company._id);
+    return res.json({ jobroles });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch job roles' });
+  }
+}
+
 export { resolveApiCompanyName };

@@ -25,20 +25,6 @@ import { cn } from '@/lib/utils';
 import { VISA_OPTIONS } from '@/types/resumeForm';
 import type { StudentDetail } from '@/types/phase7';
 
-const ROLE_OPTIONS = [
-  'Data Analyst',
-  'Business Analyst',
-  'Software Engineer',
-  'Full Stack Developer',
-  'Java Developer',
-  'Python Developer',
-  'DevOps Engineer',
-  'QA Engineer',
-  'Project Manager',
-  'Scrum Master',
-  'Gen AI',
-];
-
 const DETAIL_VISA_OPTIONS = ['OPT', ...VISA_OPTIONS.filter((v) => v !== 'OPT')];
 
 /** Fields that belong in the Resume tab — keep out of Details suggestions & list. */
@@ -170,14 +156,30 @@ export function StudentDetailsEditor({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [pickerForId, setPickerForId] = useState<string | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
+  const [masterRoles, setMasterRoles] = useState<string[]>([]);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   const roleOptions = useMemo(() => {
-    const set = new Set(ROLE_OPTIONS);
+    const set = new Set(masterRoles);
     if (role) set.add(role);
     return Array.from(set);
-  }, [role]);
+  }, [masterRoles, role]);
+
+  useEffect(() => {
+    let cancelled = false;
+    studentApi
+      .jobRoles(student.companyId)
+      .then((data) => {
+        if (!cancelled) setMasterRoles(Array.isArray(data.jobroles) ? data.jobroles : []);
+      })
+      .catch(() => {
+        if (!cancelled) setMasterRoles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [student.companyId]);
 
   useEffect(() => {
     const d = student.details as Record<string, unknown>;

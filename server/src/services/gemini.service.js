@@ -238,40 +238,99 @@ export function mergeSkillsPreservingBase(baseSkills = [], fixedSkills = []) {
   return result;
 }
 
+function pointText(p) {
+  return String(p?.point || p?.text || '').trim();
+}
+
 /**
- * Enforce client Fix Resume policy: base summary/experience/etc. unchanged; skills may only grow.
+ * Normalize tailored output: allow rewritten summary/experience; lock structure from base.
+ * - education / certifications / role metadata from base
+ * - skills = base + missed JD skills
+ * - summary / experience bullets from model when present
  */
-export function preserveBaseResumeWithAddedSkills(baseResume, fixedResume) {
-  const out = cloneResume(baseResume);
+export function normalizeTailoredResume(baseResume, fixedResume) {
+  const base = cloneResume(baseResume);
+  const fixed =
+    fixedResume && typeof fixedResume === 'object' ? cloneResume(fixedResume) : {};
+  const out = cloneResume(base);
+
+  const fixedSummary = Array.isArray(fixed.professionalsummary_points)
+    ? fixed.professionalsummary_points.filter((p) => pointText(p))
+    : null;
+  if (fixedSummary?.length) {
+    out.professionalsummary_points = fixedSummary.map((p) => ({
+      ...p,
+      point: pointText(p),
+      form: p.form !== false,
+    }));
+  }
+
   const fixedSkills =
-    fixedResume?.techinicalskills ||
-    fixedResume?.technicalskills ||
-    fixedResume?.technical_skills ||
-    null;
+    fixed.techinicalskills || fixed.technicalskills || fixed.technical_skills || null;
+  out.techinicalskills = mergeSkillsPreservingBase(
+    base.techinicalskills || [],
+    Array.isArray(fixedSkills) ? fixedSkills : base.techinicalskills || []
+  );
 
-  if (Array.isArray(fixedSkills)) {
-    out.techinicalskills = mergeSkillsPreservingBase(baseResume?.techinicalskills || [], fixedSkills);
-  }
+  const baseExp = Array.isArray(base.experience) ? base.experience : [];
+  const fixedExp = Array.isArray(fixed.experience) ? fixed.experience : [];
+  out.experience = baseExp.map((role, idx) => {
+    const match =
+      fixedExp[idx] ||
+      fixedExp.find(
+        (r) =>
+          String(r?.company || '')
+            .trim()
+            .toLowerCase() ===
+            String(role?.company || '')
+              .trim()
+              .toLowerCase() &&
+          String(r?.position || '')
+            .trim()
+            .toLowerCase() ===
+            String(role?.position || '')
+              .trim()
+              .toLowerCase()
+      );
+    const rewritten = Array.isArray(match?.points)
+      ? match.points.filter((p) => pointText(p)).map((p) => ({
+          ...p,
+          point: pointText(p),
+          form: p.form !== false,
+        }))
+      : null;
+    return {
+      ...role,
+      company: role.company,
+      position: role.position,
+      location: role.location,
+      start: role.start,
+      end: role.end,
+      visible: role.visible !== false,
+      points: rewritten?.length ? rewritten : role.points || [],
+    };
+  });
 
-  // Hard restore — model must never rewrite these sections.
-  if (Array.isArray(baseResume?.professionalsummary_points)) {
-    out.professionalsummary_points = cloneResume(baseResume.professionalsummary_points);
-  }
-  if (Array.isArray(baseResume?.experience)) {
-    out.experience = cloneResume(baseResume.experience);
-  }
-  if (Array.isArray(baseResume?.education)) {
-    out.education = cloneResume(baseResume.education);
-  }
-  if (Array.isArray(baseResume?.certifications)) {
-    out.certifications = cloneResume(baseResume.certifications);
+  if (Array.isArray(base.education)) out.education = cloneResume(base.education);
+  if (Array.isArray(base.certifications)) out.certifications = cloneResume(base.certifications);
+  if (base.jobtitle || base.jobTitle) {
+    out.jobtitle = base.jobtitle || base.jobTitle;
+    delete out.jobTitle;
   }
 
   return out;
 }
 
+/** @deprecated Use normalizeTailoredResume — kept for callers expecting the old name. */
+export function preserveBaseResumeWithAddedSkills(baseResume, fixedResume) {
+  return normalizeTailoredResume(baseResume, fixedResume);
+}
+
+/** Client target: tailored resumes should reach ATS score 90+. */
+export const ATS_TARGET_SCORE = 90;
+
 const DEFAULT_FIX_RESUME_INSTRUCTIONS =
-  'Preserve the base resume. Keep all professional summary bullets, experience, education, and certifications unchanged. Keep all existing technical skills. Only add skills/tools from the job description that are missing from the base technical skills.';
+  'Tailor the base resume for the target job: rewrite professional summary bullets for JD keywords (similar count); keep all employers/dates/titles but rewrite and compress experience bullets to about half; keep education and certifications; keep existing technical skills and add missing JD skills.';
 
 export async function fixResumeForJob(resumeData, jobContext, instructions = '') {
   if (!resumeData || typeof resumeData !== 'object') {
@@ -283,22 +342,39 @@ export async function fixResumeForJob(resumeData, jobContext, instructions = '')
     jobDescription = '',
     companyName = '',
     improvements = [],
+    previousAtsScore = null,
+    isRefix = false,
+    structureBase = null,
   } = jobContext;
 
   const adminNotes = String(instructions || '').trim();
+  const looksLikeOldPreserveOnly =
+    /preserve the base resume exactly|do not rewrite or remove base content/i.test(adminNotes) &&
+    !/rewrite|compress|tailor|about half/i.test(adminNotes);
   const baseInstructions =
-    adminNotes && /preserve|keep all|only add|missing/i.test(adminNotes)
+    adminNotes && !looksLikeOldPreserveOnly
       ? adminNotes
       : DEFAULT_FIX_RESUME_INSTRUCTIONS;
 
-  const improvementBlock = Array.isArray(improvements) && improvements.length
-    ? `\nOptional notes (do NOT use these to rewrite or remove base summary/experience; skills additions only if truly missing):\n${improvements
-        .map((item, i) => `${i + 1}. ${String(item)}`)
-        .join('\n')}\n`
+  const improvementList = Array.isArray(improvements)
+    ? improvements.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  const improvementBlock = improvementList.length
+    ? `\n${isRefix ? 'RE-FIX — ' : ''}Priority improvements you MUST implement in the returned resume JSON (ATS target ${ATS_TARGET_SCORE}+)${
+        previousAtsScore != null ? ` (previous ATS score: ${previousAtsScore})` : ''
+      }:\n${improvementList.map((item, i) => `${i + 1}. ${item}`).join('\n')}
+- Address EVERY item above with concrete resume changes (summary wording, experience bullets, and/or added skills).
+- Do not return an unchanged resume. The output must clearly reflect these improvements.\n`
+    : '';
+
+  const refixBlock = isRefix
+    ? `\nThis is a RE-FIX of an already tailored resume. Start from the resume JSON below (not a blank rewrite from scratch), then apply the improvements and strengthen JD keyword alignment to raise the ATS score toward ${ATS_TARGET_SCORE}+.\n`
     : '';
 
   const prompt = `${baseInstructions}
 ${improvementBlock}
+${refixBlock}
 ${atsTemplateFixResumeInstructions()}
 
 Job title: ${jobTitle}
@@ -306,19 +382,21 @@ Company: ${companyName}
 Job description:
 ${jobDescription}
 
-Base resume JSON (source of truth — preserve summary, experience, education, certifications, and existing skills):
+${isRefix ? 'Current tailored resume JSON (apply improvements to this)' : 'Base resume JSON (source of truth for employers, dates, education, certifications, and existing skills)'}:
 ${JSON.stringify(resumeData, null, 2)}
 
 Return ONLY the full updated resume JSON object.
 IMPORTANT:
 - Do NOT change the "jobtitle" field.
-- Do NOT rewrite professionalsummary_points or experience.
-- Only augment techinicalskills with missed JD skills.`;
+- Rewrite professionalsummary_points for the job (keep a similar bullet count).
+- Keep every experience role (company/title/dates); rewrite responsibility points as needed for the JD${improvementList.length ? ' and the listed improvements' : ''}.
+- Keep education and certifications from the source resume.
+- Keep existing techinicalskills and ADD missing JD skills${improvementList.length ? ' plus any skills implied by the improvements' : ''}.`;
 
   if (!isGeminiConfigured()) {
     if (process.env.NODE_ENV !== 'production') {
       return {
-        resume: preserveBaseResumeWithAddedSkills(resumeData, resumeData),
+        resume: normalizeTailoredResume(structureBase || resumeData, resumeData),
         source: 'mock',
         mock: true,
       };
@@ -327,15 +405,12 @@ IMPORTANT:
   }
 
   const generated = await generateJsonWithGemini(prompt, {
-    temperature: 0.2,
+    temperature: isRefix || improvementList.length ? 0.45 : 0.35,
     maxOutputTokens: 16384,
   });
-  const resume = preserveBaseResumeWithAddedSkills(resumeData, generated);
+  const resume = normalizeTailoredResume(structureBase || resumeData, generated);
   return { resume, source: 'gemini' };
 }
-
-/** Client target: tailored resumes should reach ATS score 90+. */
-export const ATS_TARGET_SCORE = 90;
 
 /**
  * Score a resume against a job using Gemini.
@@ -355,10 +430,10 @@ Compare the candidate resume JSON to the target job and return ONLY valid JSON:
 Scoring rules:
 - Be realistic and strict. Client target is ${ATS_TARGET_SCORE}+.
 - Score below ${ATS_TARGET_SCORE} when keywords, skills, titles, or experience alignment are weak.
-- improvements must be concrete and actionable. Prefer missing skills/tools from the JD to add (Fix Resume only adds skills; it does not rewrite summary or experience).
+- improvements must be concrete and actionable for tailoring (rewrite summary/experience for JD keywords, add missing skills, quantify bullets when supported).
 - If score is ${ATS_TARGET_SCORE} or higher, improvements may be empty or only minor polish tips (max 2).
-- If score is below ${ATS_TARGET_SCORE}, provide 3-6 prioritized improvements focused on missing keywords/skills.
-- Do not invent work history that is not supported by the resume.
+- If score is below ${ATS_TARGET_SCORE}, provide 3-6 prioritized improvements that would raise the score.
+- Do not invent work history that is not supported by the resume; suggest reframing/emphasis instead.
 
 Job title: ${jobTitle}
 Company: ${companyName}

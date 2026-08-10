@@ -459,7 +459,10 @@ export const externalApi = {
         companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''
       }`
     ),
-  jobRoles: () => api<{ jobroles: string[] }>('/external/job-roles'),
+  jobRoles: (companyId?: string) =>
+    api<{ jobroles: string[] }>(
+      `/external/job-roles${companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''}`
+    ),
   createRecruiter: (payload: {
     name: string;
     email: string;
@@ -706,6 +709,10 @@ export const studentApi = {
       billing: unknown[];
       activity?: { today: number; week: number; month: number };
     }>(`/students/${encodeURIComponent(phone)}${companyId ? `?companyId=${companyId}` : ''}`),
+  getShareLink: (phone: string, companyId?: string) =>
+    api<{ shareToken: string; shareLink: string }>(
+      `/students/${encodeURIComponent(phone)}/share-link${companyId ? `?companyId=${companyId}` : ''}`
+    ),
   create: (payload: {
     name: string;
     mobile: string;
@@ -797,6 +804,10 @@ export const studentApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
+  jobRoles: (companyId?: string) =>
+    api<{ jobroles: string[] }>(
+      `/students/job-roles${companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''}`
+    ),
 };
 
 export const resumeTemplateApi = {
@@ -909,6 +920,49 @@ export const jobScrapApi = {
     const query = qs.toString();
     return api<{ items: JobScrapMasterItem[] }>(`/job-scrap/master${query ? `?${query}` : ''}`);
   },
+};
+
+export const jobScrapMasterApi = {
+  list: (params?: { companyId?: string; category?: MasterDataCategory; activeOnly?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.companyId) qs.set('companyId', params.companyId);
+    if (params?.category) qs.set('category', params.category);
+    if (params?.activeOnly) qs.set('activeOnly', 'true');
+    const query = qs.toString();
+    return api<{ items: JobScrapMasterItem[]; categories: MasterDataCategory[] }>(
+      `/job-scrap-master${query ? `?${query}` : ''}`
+    );
+  },
+  create: (payload: {
+    category: MasterDataCategory;
+    value: string;
+    label?: string;
+    sortOrder?: number;
+    isActive?: boolean;
+    meta?: Record<string, unknown>;
+    companyId?: string;
+  }) =>
+    api<{ item: JobScrapMasterItem }>('/job-scrap-master', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (
+    id: string,
+    payload: Partial<{
+      category: MasterDataCategory;
+      value: string;
+      label: string;
+      sortOrder: number;
+      isActive: boolean;
+      meta: Record<string, unknown>;
+    }>
+  ) =>
+    api<{ item: JobScrapMasterItem }>(`/job-scrap-master/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  remove: (id: string) =>
+    api<{ success: boolean }>(`/job-scrap-master/${id}`, { method: 'DELETE' }),
 };
 
 export type { TicketView };

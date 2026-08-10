@@ -129,7 +129,7 @@ function bullet(text, { boldPrefix = '', boldAll = false } = {}) {
 function resolveResume(details, options = {}) {
   const { resume, contactExtras } = enrichResumeForDownload(details, options);
   if (options.jobtitle) resume.jobtitle = clean(options.jobtitle) || resume.jobtitle;
-  // ATS exports: preserve full base summary / experience / skills (Fix Resume policy).
+  // ATS exports: soft page fit after tailor (summary/experience already rewritten+compressed).
   return {
     resume: fitResumeToAtsPageBudget(resume, {
       jobTitle: options.jobtitle || resume.jobtitle || details.role || '',
@@ -140,12 +140,10 @@ function resolveResume(details, options = {}) {
 }
 
 /**
- * Keep base summary / experience / skills intact for ATS export.
- * Only normalize visibility/cleanup; do not cap or drop those sections for page budget.
- * (Client Fix Resume policy: preserve base content; skills may only grow.)
+ * Normalize + soft page budget. Prefer keeping tailored content; only shape when clearly over ~3 pages.
  */
-export function fitResumeToAtsPageBudget(resume = {}, _jobContext = {}) {
-  return {
+export function fitResumeToAtsPageBudget(resume = {}, jobContext = {}) {
+  const next = {
     ...resume,
     professionalsummary_points: (resume.professionalsummary_points || [])
       .filter(pointVisible)
@@ -166,6 +164,14 @@ export function fitResumeToAtsPageBudget(resume = {}, _jobContext = {}) {
       (c) => c && c.visible !== false && clean(c.certification_title)
     ),
   };
+
+  const MAX_LINES = 144;
+  if (estimateResumeLines(next) <= MAX_LINES) return next;
+
+  const shaped = shapeTowardAtsTemplate(next, jobContext);
+  if (estimateResumeLines(shaped) <= MAX_LINES) return shaped;
+
+  return trimNonRequiredAtsBullets(shaped, MAX_LINES, jobContext);
 }
 
 function roleBulletFloor(roleIndex, floors = false) {

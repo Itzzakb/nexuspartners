@@ -15,6 +15,7 @@ export const MODULE_KEYS = [
   'ats',
   'prompts',
   'job_scrap',
+  'job_scrap_master',
 ] as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[number];
@@ -33,3 +34,21 @@ export function canAccessModule(user: User | null, module: ModuleKey): boolean {
 export function canAccessAnyAdmin(user: User | null): boolean {
   return !!(user?.isPlatformAdmin || user?.isCompanyAdmin);
 }
+
+export const MODULE_LABELS: Record<ModuleKey, string> = {
+  tickets: 'Tickets',
+  interviews: 'Interviews',
+  placements: 'Placements',
+  teams: 'Teams',
+  recruiters: 'Recruiters',
+  payments: 'Payments',
+  salaries: 'Salaries',
+  billing: 'Billing',
+  chat: 'Chat',
+  users: 'Users',
+  students: 'Students',
+  ats: 'ATS',
+  prompts: 'Prompts',
+  job_scrap: 'Job Scrap',
+  job_scrap_master: 'Job Scrap Master',
+};

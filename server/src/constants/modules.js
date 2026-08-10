@@ -13,6 +13,7 @@ export const MODULE_KEYS = [
   'ats',
   'prompts',
   'job_scrap',
+  'job_scrap_master',
 ];
 
 export const DEFAULT_TEMPLATE_MODULES = {
@@ -30,4 +31,5 @@ export const DEFAULT_TEMPLATE_MODULES = {
   ats: false,
   prompts: false,
   job_scrap: false,
+  job_scrap_master: false,
 };

@@ -30,6 +30,7 @@ import studentRoutes from './routes/student.routes.js';
 import resumeTemplateRoutes from './routes/resumeTemplate.routes.js';
 import promptRoutes from './routes/prompt.routes.js';
 import jobScrapRoutes from './routes/jobScrap.routes.js';
+import jobScrapMasterRoutes from './routes/jobScrapMaster.routes.js';
 import recruiterPortalRoutes from './routes/recruiterPortal.routes.js';
 import {
   swaggerUi,
@@ -120,6 +121,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/resume-templates', resumeTemplateRoutes);
 app.use('/api/prompts', promptRoutes);
 app.use('/api/job-scrap', jobScrapRoutes);
+app.use('/api/job-scrap-master', jobScrapMasterRoutes);
 app.use('/api/recruiter', recruiterPortalRoutes);
 
 app.use((err, _req, res, _next) => {

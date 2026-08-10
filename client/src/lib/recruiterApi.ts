@@ -167,6 +167,11 @@ export const recruiterStudentsApi = {
       body: JSON.stringify({ notes }),
     }),
 
+  getShareLink: (phone: string) =>
+    recruiterApi<{ shareToken: string; shareLink: string }>(
+      `/students/${encodeURIComponent(phone)}/share-link`
+    ),
+
   tickets: (phone: string) =>
     recruiterApi<{ tickets: RecruiterStudentDetail['tickets'] }>(
       `/students/${encodeURIComponent(phone)}/tickets`

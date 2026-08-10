@@ -2,6 +2,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2,
   ClipboardList,
+  Database,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -65,6 +66,7 @@ const mainNavItems: NavItem[] = [
   { to: '/interviews', label: 'Interviews', icon: Calendar, module: 'interviews' },
   { to: '/placements', label: 'Job Placements', icon: Briefcase, module: 'placements' },
   { to: '/job-scrap', label: 'Job Scrap', icon: Radar, showAdmin: true, module: 'job_scrap' },
+  { to: '/job-scrap-master', label: 'Job Scrap Master', icon: Database, module: 'job_scrap_master' },
   { to: '/teams', label: 'Teams', icon: UsersRound, showAdmin: true, module: 'teams' },
   { to: '/my-team', label: 'My Team', icon: UserCheck, module: 'teams' },
   { to: '/recruiters', label: 'Recruiters', icon: UserPlus, showAdmin: true, module: 'recruiters' },

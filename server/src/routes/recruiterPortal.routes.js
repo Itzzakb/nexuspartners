@@ -7,6 +7,7 @@ import {
   getStudentActivity,
   getStudentResumeForm,
   updateStudentNotes,
+  getRecruiterStudentShareLink,
   listJobs,
   getJob,
   dropJob,
@@ -50,6 +51,7 @@ router.get('/students', listStudents);
 router.get('/students/:phone', getStudent);
 router.get('/students/:phone/activity', getStudentActivity);
 router.get('/students/:phone/resume-form', getStudentResumeForm);
+router.get('/students/:phone/share-link', getRecruiterStudentShareLink);
 router.patch('/students/:phone/notes', updateStudentNotes);
 router.get('/students/:phone/tickets', listStudentTickets);
 router.get('/students/:phone/resume/download', downloadStudentResumeHandler);

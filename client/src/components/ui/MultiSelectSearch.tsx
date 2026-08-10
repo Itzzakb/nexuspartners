@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { Check, ChevronDown, Plus, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type MultiSelectOption = {
@@ -15,6 +15,9 @@ interface MultiSelectSearchProps {
   emptyMessage?: string;
   disabled?: boolean;
   className?: string;
+  /** Allow typing a value that is not in options (e.g. custom domain). */
+  allowCreate?: boolean;
+  createHint?: string;
 }
 
 export function MultiSelectSearch({
@@ -25,6 +28,8 @@ export function MultiSelectSearch({
   emptyMessage = 'No options found',
   disabled = false,
   className,
+  allowCreate = false,
+  createHint = 'Add custom value',
 }: MultiSelectSearchProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -41,6 +46,16 @@ export function MultiSelectSearch({
     });
   }, [options, query]);
 
+  const createValue = useMemo(() => {
+    if (!allowCreate) return '';
+    const raw = query.trim().toLowerCase().replace(/^www\./, '');
+    if (!raw) return '';
+    const exists =
+      options.some((o) => o.value.toLowerCase() === raw || o.label.toLowerCase() === raw) ||
+      value.some((v) => v.toLowerCase() === raw);
+    return exists ? '' : raw;
+  }, [allowCreate, query, options, value]);
+
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
@@ -55,6 +70,12 @@ export function MultiSelectSearch({
   };
 
   const remove = (val: string) => onChange(value.filter((v) => v !== val));
+
+  const addCustom = () => {
+    if (!createValue) return;
+    onChange([...value, createValue]);
+    setQuery('');
+  };
 
   return (
     <div ref={rootRef} className={cn('relative', className)}>
@@ -111,11 +132,29 @@ export function MultiSelectSearch({
                 placeholder="Type to search…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && createValue) {
+                    e.preventDefault();
+                    addCustom();
+                  }
+                }}
               />
             </div>
           </div>
           <div className="max-h-56 overflow-y-auto p-1">
-            {filtered.length === 0 ? (
+            {createValue && (
+              <button
+                type="button"
+                className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-primary hover:bg-primary/10"
+                onClick={addCustom}
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>
+                  {createHint}: <span className="font-medium">{createValue}</span>
+                </span>
+              </button>
+            )}
+            {filtered.length === 0 && !createValue ? (
               <p className="px-3 py-6 text-center text-sm text-body">{emptyMessage}</p>
             ) : (
               filtered.map((opt) => {

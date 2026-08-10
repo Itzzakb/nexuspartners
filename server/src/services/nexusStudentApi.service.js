@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import Company from '../models/Company.js';
 import Student from '../models/Student.js';
 import RecruiterAccount from '../models/RecruiterAccount.js';
+import { listActiveJobTitles } from './jobScrapMaster.service.js';
 
 export function normalizePhone(phone = '') {
   return String(phone).replace(/[^\d+]/g, '').trim();
@@ -147,20 +148,9 @@ export async function fetchStudentDetails(phone, companyId) {
   return toExternalStudentShape(student);
 }
 
-export async function fetchJobRoles() {
-  return [
-    'Data Engineer',
-    'Cloud Data Engineer',
-    'Java Developer',
-    'Data Scientist',
-    'Software Engineer',
-    'Full Stack Developer',
-    'Data Analyst',
-    'Business Analyst',
-    'Devops Engineer',
-    'Frontend Developer',
-    'Gen AI',
-  ];
+/** Job titles from Job Scrap Master (`job_title`) — single source of truth. */
+export async function fetchJobRoles(companyId) {
+  return listActiveJobTitles(companyId);
 }
 
 export async function createClerk(payload) {

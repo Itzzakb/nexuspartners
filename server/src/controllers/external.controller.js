@@ -74,9 +74,10 @@ export async function proxyStudentDetails(req, res) {
   }
 }
 
-export async function proxyJobRoles(_req, res) {
+export async function proxyJobRoles(req, res) {
   try {
-    const jobroles = await fetchJobRoles();
+    const company = await resolveCompanyForRequest(req.user, req.query.companyId || req.body.companyId);
+    const jobroles = await fetchJobRoles(company._id);
     return res.json({ jobroles });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to fetch job roles' });

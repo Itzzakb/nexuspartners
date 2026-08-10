@@ -25,6 +25,8 @@ const studentSchema = new mongoose.Schema(
     subscriptionDays: { type: Number, default: 0 },
     visa: { type: String, default: '' },
     isDemo: { type: Boolean, default: false },
+    /** Public read-only share link for the student (details + apply stats). */
+    shareToken: { type: String, default: null, trim: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }
@@ -34,6 +36,7 @@ studentSchema.index({ companyId: 1, phoneNormalized: 1 }, { unique: true });
 studentSchema.index({ companyId: 1, status: 1 });
 studentSchema.index({ companyId: 1, recruiterUsername: 1 });
 studentSchema.index({ companyId: 1, name: 1 });
+studentSchema.index({ shareToken: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model('Student', studentSchema);
 export { STATUS as STUDENT_STATUSES };

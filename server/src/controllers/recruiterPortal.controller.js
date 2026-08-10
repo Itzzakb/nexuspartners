@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
 import RecruiterAccount from '../models/RecruiterAccount.js';
 import Company from '../models/Company.js';
+import RecruiterResumeLibrary from '../models/RecruiterResumeLibrary.js';
+import Student from '../models/Student.js';
 import { signRecruiterAccessToken } from '../middleware/recruiterAuth.js';
 import {
   listRecruiterStudents,
@@ -28,12 +30,15 @@ import {
   updateRecruiterPassword,
   listRecruiterNotifications,
   getStudentResumeFormForRecruiter,
+  assertStudentAssignedToRecruiter,
 } from '../services/recruiterPortal.service.js';
 import { APPLICATION_STATUS_LABELS, APPLICATION_TRACKER_STATUSES } from '../constants/recruiterApplications.js';
 import ScrapedJob from '../models/ScrapedJob.js';
 import StudentNote from '../models/StudentNote.js';
 import StudentJobAction from '../models/StudentJobAction.js';
 import { scrapedJobToJSON } from '../services/jobScrap.service.js';
+import { buildStudentShareLink } from '../utils/studentShare.js';
+import { normalizePhone } from '../services/nexusStudentApi.service.js';
 
 export async function recruiterLogin(req, res) {
   try {
@@ -190,6 +195,28 @@ export async function updateStudentNotes(req, res) {
     return res.json({ notes: note.notes });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to update notes' });
+  }
+}
+
+export async function getRecruiterStudentShareLink(req, res) {
+  try {
+    const phone = req.params.phone;
+    await assertStudentAssignedToRecruiter(req.recruiter, req.company, phone);
+    const normalized = normalizePhone(phone);
+    const local = await Student.findOne({
+      companyId: req.company._id,
+      $or: [{ phoneNormalized: normalized }, { phone }],
+    });
+    if (!local) return res.status(404).json({ error: 'Student not found' });
+
+    const sharePhone = local.phone || phone;
+    return res.json({
+      shareToken: sharePhone,
+      shareLink: buildStudentShareLink(sharePhone, req),
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    return res.status(status).json({ error: err.message || 'Failed to create share link' });
   }
 }
 
@@ -436,12 +463,37 @@ export async function fixResume(req, res) {
     const { studentPhone, improvements } = req.body;
     if (!studentPhone) return res.status(400).json({ error: 'studentPhone is required' });
 
+    const improvementList = Array.isArray(improvements)
+      ? improvements.map((x) => String(x || '').trim()).filter(Boolean)
+      : [];
+
+    // Re-fix with improvements: continue from the existing tailored library copy.
+    let resumeOverride = null;
+    let previousAtsScore = null;
+    let isRefix = false;
+    if (improvementList.length) {
+      const existing = await RecruiterResumeLibrary.findOne({
+        companyId: req.company._id,
+        recruiterUsername: req.recruiter.username,
+        studentPhone: String(studentPhone).trim(),
+        scrapedJobId: req.params.id,
+      }).select('resumeData atsScore');
+      if (existing?.resumeData && typeof existing.resumeData === 'object') {
+        resumeOverride = existing.resumeData;
+        previousAtsScore = existing.atsScore == null ? null : Number(existing.atsScore);
+        isRefix = true;
+      }
+    }
+
     const result = await fixResumeForStudentJob({
       company: req.company,
       recruiter: req.recruiter,
       studentPhone,
       scrapedJobId: req.params.id,
-      improvements: Array.isArray(improvements) ? improvements : [],
+      improvements: improvementList,
+      resumeOverride,
+      previousAtsScore,
+      isRefix,
     });
 
     return res.json(result);

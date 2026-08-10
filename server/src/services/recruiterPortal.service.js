@@ -876,25 +876,38 @@ export async function fixResumeForStudentJob({
   studentPhone,
   scrapedJobId,
   improvements = [],
+  resumeOverride = null,
+  previousAtsScore = null,
+  isRefix = false,
 }) {
   const student = await assertStudentAssignedToRecruiter(recruiter, company, studentPhone);
   const job = await getRecruiterScrapedJob(company._id, scrapedJobId);
 
   const details = await fetchStudentDetails(studentPhone);
-  const resumeData = extractResumeFromStudentDetails(details);
-  if (!resumeData) {
+  const baseResume = extractResumeFromStudentDetails(details);
+  if (!baseResume) {
     throw new Error('Student resume data not found');
   }
 
+  // Re-fix: start from the current tailored library copy so improvements compound.
+  // First Fix Resume: start from the student base resume.
+  const sourceResume =
+    resumeOverride && typeof resumeOverride === 'object' ? resumeOverride : baseResume;
+
   const instructions = await getPromptByKey('resume_fix_for_job');
-  const originalJobTitle = String(resumeData.jobtitle || resumeData.jobTitle || '').trim();
+  const originalJobTitle = String(
+    baseResume.jobtitle || baseResume.jobTitle || sourceResume.jobtitle || sourceResume.jobTitle || ''
+  ).trim();
   const { resume: fixedResume, source, mock } = await fixResumeForJob(
-    resumeData,
+    sourceResume,
     {
       jobTitle: job.jobTitle,
       jobDescription: job.description,
       companyName: job.companyName,
       improvements,
+      previousAtsScore,
+      isRefix: !!isRefix || !!resumeOverride,
+      structureBase: baseResume,
     },
     instructions
   );
@@ -1289,12 +1302,20 @@ export async function refreshResumeLibraryEntry(recruiter, company, id) {
     throw err;
   }
 
+  const improvements = Array.isArray(item.atsImprovements)
+    ? item.atsImprovements.map((x) => String(x || '').trim()).filter(Boolean)
+    : [];
+
   const result = await fixResumeForStudentJob({
     company,
     recruiter,
     studentPhone: item.studentPhone,
     scrapedJobId: item.scrapedJobId,
-    improvements: Array.isArray(item.atsImprovements) ? item.atsImprovements : [],
+    improvements,
+    // Apply improvements on top of the current tailored copy (not the raw base resume).
+    resumeOverride: item.resumeData && typeof item.resumeData === 'object' ? item.resumeData : null,
+    previousAtsScore: item.atsScore == null ? null : Number(item.atsScore),
+    isRefix: true,
   });
 
   return result.libraryEntry;

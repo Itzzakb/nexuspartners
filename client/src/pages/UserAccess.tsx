@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useCompanies } from '@/context/CompanyContext';
 import { permissionApi, userApi } from '@/lib/api';
 import { toast } from '@/lib/toast';
-import { MODULE_KEYS } from '@/lib/permissions';
+import { MODULE_KEYS, MODULE_LABELS } from '@/lib/permissions';
 import { Toggle, ToggleField } from '@/components/ui/Toggle';
 import type { PermissionTemplate } from '@/types/phase6';
 import type { User } from '@/lib/api';
@@ -94,10 +94,9 @@ export default function UserAccess() {
           {MODULE_KEYS.map((mod) => (
             <ToggleField
               key={mod}
-              label={mod.replace('_', ' ')}
+              label={MODULE_LABELS[mod]}
               checked={!!templatePerms[mod]}
               onChange={(checked) => setTemplatePerms({ ...templatePerms, [mod]: checked })}
-              labelClassName="capitalize"
             />
           ))}
         </div>
@@ -122,7 +121,9 @@ export default function UserAccess() {
               <th className="p-4">User</th>
               <th className="p-4">Role</th>
               {MODULE_KEYS.map((m) => (
-                <th key={m} className="p-2 text-xs capitalize">{m.slice(0, 4)}</th>
+                <th key={m} className="p-2 text-xs" title={MODULE_LABELS[m]}>
+                  {MODULE_LABELS[m].slice(0, 6)}
+                </th>
               ))}
               <th className="p-4">Template</th>
             </tr>

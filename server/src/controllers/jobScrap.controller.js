@@ -13,6 +13,7 @@ import {
   extractExperienceYears,
 } from '../services/jobScrap.service.js';
 import { rescheduleProfile, unscheduleProfile } from '../services/jobScrap.scheduler.js';
+import { seedJobScrapMasterForCompany } from '../utils/jobScrapMasterSeed.js';
 
 async function resolveCompanyId(user, companyId) {
   let targetId = user.companyId._id;
@@ -366,6 +367,20 @@ function masterItemToJSON(doc) {
 export async function listMasterItems(req, res) {
   try {
     const filter = getCompanyFilter(req.user, req.query.companyId);
+    // Resolve company even when platform admin omits query — still seed for the user's company.
+    let companyId = filter.companyId;
+    if (!companyId && req.user?.companyId) {
+      companyId = req.user.companyId._id || req.user.companyId;
+    }
+    if (companyId) {
+      filter.companyId = companyId;
+      try {
+        await seedJobScrapMasterForCompany(companyId, req.user?._id || null);
+      } catch (seedErr) {
+        console.warn('[JobScrap] master seed on list failed:', seedErr.message);
+      }
+    }
+
     if (req.query.category) filter.category = req.query.category;
     if (req.query.activeOnly === 'true') filter.isActive = true;
 

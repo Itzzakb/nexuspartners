@@ -355,7 +355,9 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
                     setExceptDomains((prev) => prev.filter((d) => !next.includes(d)));
                   }}
                   placeholder="Search domains…"
-                  emptyMessage="No domains available"
+                  emptyMessage="No domains available — type a domain to add"
+                  allowCreate
+                  createHint="Add include domain"
                 />
                 <p className="mt-1 text-xs text-body">
                   TheirStack <code className="text-[11px]">url_domain_or</code> — include only these sources.
@@ -371,12 +373,15 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
                   setExceptDomains(next);
                   setSelectedDomains((prev) => prev.filter((d) => !next.includes(d)));
                 }}
-                placeholder="Exclude LinkedIn, Indeed, …"
-                emptyMessage="No domains available"
+                placeholder="Exclude LinkedIn, Indeed, Naukri…"
+                emptyMessage="No domains available — type a domain to add"
+                allowCreate
+                createHint="Add except domain"
               />
               <p className="mt-1 text-xs text-body">
                 TheirStack <code className="text-[11px]">url_domain_not</code> — scrape all matching jobs except
-                these job boards/sources.
+                these job boards/sources. Type to search (e.g. <strong>naukri</strong>), or type a full domain
+                and add it. Selecting LinkedIn / Indeed / Naukri also expands country hosts on sync.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

@@ -7,11 +7,13 @@ import {
   Eye,
   FileText,
   CreditCard,
+  Link2,
   UserRound,
   Video,
 } from 'lucide-react';
 import { resumeParseApi, studentApi } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { toPublicAppUrl } from '@/lib/publicAppUrl';
 import { StudentViewTab } from '@/components/students/StudentViewTab';
 import { StudentResumeEditor } from '@/components/students/StudentResumeEditor';
 import { StudentDetailsEditor } from '@/components/students/StudentDetailsEditor';
@@ -54,6 +56,7 @@ export default function StudentDetailPage() {
   const [loadError, setLoadError] = useState('');
   const [mainTab, setMainTab] = useState<MainTab>(initialTab);
   const [resumeTab, setResumeTab] = useState<ResumeViewTab>('summary');
+  const [sharing, setSharing] = useState(false);
 
   const load = async () => {
     if (!phone) return;
@@ -120,6 +123,21 @@ export default function StudentDetailPage() {
     }
   };
 
+  const handleCopyShareLink = async () => {
+    if (!student) return;
+    setSharing(true);
+    try {
+      const data = await studentApi.getShareLink(student.phone, student.companyId);
+      const link = toPublicAppUrl(data.shareLink);
+      await navigator.clipboard.writeText(link);
+      toast.success('Student share link copied');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create share link');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -144,13 +162,24 @@ export default function StudentDetailPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to students
         </Link>
-        <Link
-          to={`/search-resume?phone=${encodeURIComponent(student.phone)}&companyId=${encodeURIComponent(student.companyId)}`}
-          className="np-btn-secondary !py-2 text-sm"
-        >
-          <ExternalLink className="mr-2 h-4 w-4" />
-          Edit Student Resume
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="np-btn-secondary !py-2 text-sm"
+            onClick={handleCopyShareLink}
+            disabled={sharing}
+          >
+            <Link2 className="mr-2 h-4 w-4" />
+            {sharing ? 'Preparing…' : 'Copy student link'}
+          </button>
+          <Link
+            to={`/search-resume?phone=${encodeURIComponent(student.phone)}&companyId=${encodeURIComponent(student.companyId)}`}
+            className="np-btn-secondary !py-2 text-sm"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Edit Student Resume
+          </Link>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-start justify-between gap-3">

@@ -15,7 +15,7 @@ const DEFAULT_PROMPTS = [
     key: 'resume_fix_for_job',
     label: 'Fix Resume for Job (Recruiter)',
     content:
-      'Preserve the base resume exactly for professional summary, experience, education, and certifications. Keep all existing technical skills. Only add skills/tools from the job description that are missing from the base technical skills (append to matching categories or add a new category). Do not rewrite or remove base content.',
+      'Tailor the base resume for the job like a competitor ATS tailor: rewrite all professional summary bullets for JD keywords (keep a similar count); keep all employers/dates/titles but rewrite and compress experience bullets to about half; keep education and certifications; keep existing technical skills and add any missing JD skills/tools. Do not invent employers or degrees.',
   },
 ];
 
@@ -62,12 +62,16 @@ export async function getPromptByKey(key) {
   const item = await AppPrompt.findOne({ key });
   const def = DEFAULT_PROMPTS.find((p) => p.key === key);
 
-  // Prefer built-in Fix Resume policy if DB still has the old "tailor/rewrite" prompt.
+  // Prefer built-in competitor-style tailor policy if DB still has the old preserve-only prompt.
   if (key === 'resume_fix_for_job') {
     const content = String(item?.content || '').trim();
-    const looksLikePreservePolicy =
-      /preserve|keep all|only add|missing from the base|do not rewrite/i.test(content);
-    if (content && looksLikePreservePolicy) return content;
+    const looksLikeTailorPolicy =
+      /rewrite|compress|tailor|competitor|about half|jd keywords/i.test(content);
+    const looksLikeOldPreserveOnly =
+      /preserve the base resume exactly|do not rewrite or remove base content/i.test(content) &&
+      !looksLikeTailorPolicy;
+    if (content && looksLikeTailorPolicy) return content;
+    if (looksLikeOldPreserveOnly) return def?.content || content || '';
     return def?.content || content || '';
   }
 
