@@ -6,6 +6,10 @@ import { parseResumeText } from '../services/gemini.service.js';
 import { extractTextFromResumeFile } from '../services/resumeTextExtract.service.js';
 import { completeParsedResumeFromText } from '../services/resumeParseComplete.service.js';
 import { enrichResumeForDownload } from '../services/resumeEnrich.service.js';
+import {
+  listAppliedResumesForStudent,
+  downloadAppliedResumeById,
+} from '../services/adminAppliedResume.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -36,6 +40,50 @@ export async function buildResume(req, res) {
     return res.json({ success: true, result });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Build failed' });
+  }
+}
+
+/** Admin Search Resume: list job-application resumes for a student. */
+export async function listAppliedResumes(req, res) {
+  try {
+    const phone = String(req.query.phone || '').trim();
+    if (!phone) return res.status(400).json({ error: 'phone is required' });
+
+    const companyId =
+      req.user.isPlatformAdmin && req.query.companyId
+        ? req.query.companyId
+        : req.user.companyId._id;
+
+    const result = await listAppliedResumesForStudent({
+      companyId,
+      studentPhone: phone,
+      company: req.query.company || '',
+      jobTitle: req.query.jobTitle || '',
+      q: req.query.q || req.query.description || '',
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to list applied resumes' });
+  }
+}
+
+/** Admin Search Resume: download a saved application resume (rebuilds if needed). */
+export async function downloadAppliedResume(req, res) {
+  try {
+    const companyId =
+      req.user.isPlatformAdmin && req.body.companyId
+        ? req.body.companyId
+        : req.user.companyId._id;
+
+    const result = await downloadAppliedResumeById({
+      companyId,
+      resumeId: req.params.id,
+      publicBaseUrl: requestPublicBaseUrl(req),
+    });
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    const status = err.status || 500;
+    return res.status(status).json({ error: err.message || 'Download failed' });
   }
 }
 

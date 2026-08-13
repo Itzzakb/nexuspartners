@@ -18,7 +18,7 @@ const recruiterResumeLibrarySchema = new mongoose.Schema(
     atsScoredAt: { type: Date, default: null },
     source: {
       type: String,
-      enum: ['fix_resume', 'ats_download', 'manual'],
+      enum: ['fix_resume', 'ats_download', 'manual', 'applied'],
       default: 'fix_resume',
     },
     notes: { type: String, default: '' },

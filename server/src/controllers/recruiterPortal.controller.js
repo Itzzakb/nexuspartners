@@ -9,6 +9,7 @@ import {
   loadRecruiterStudentDetail,
   findJobsForStudent,
   recordJobAction,
+  snapshotAppliedResume,
   getStudentActivityCounts,
   fixResumeForStudentJob,
   downloadAtsResumeForStudentJob,
@@ -329,6 +330,16 @@ export async function applyJob(req, res) {
       studentPhone,
       scrapedJobId: job._id,
       status: 'applied',
+    });
+
+    // Persist the resume used for this application (for admin Search Resume / interview prep).
+    await snapshotAppliedResume({
+      company: req.company,
+      recruiter: req.recruiter,
+      studentPhone,
+      job,
+    }).catch((err) => {
+      console.warn('[apply] resume snapshot failed:', err.message);
     });
 
     const studentForm = await getStudentResumeFormForRecruiter(

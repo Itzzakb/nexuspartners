@@ -339,6 +339,44 @@ export const resumeParseApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  listApplied: (params: {
+    phone: string;
+    companyId?: string;
+    company?: string;
+    jobTitle?: string;
+    q?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    qs.set('phone', params.phone);
+    if (params.companyId) qs.set('companyId', params.companyId);
+    if (params.company) qs.set('company', params.company);
+    if (params.jobTitle) qs.set('jobTitle', params.jobTitle);
+    if (params.q) qs.set('q', params.q);
+    return api<{
+      resumes: Array<{
+        id: string;
+        jobTitle: string;
+        companyName: string;
+        downloadUrl: string;
+        hasResumeData: boolean;
+        applyUrl?: string;
+        createdAt: string;
+        scrapedJobId?: string | null;
+        studentPhone: string;
+        studentName: string;
+        source: string;
+      }>;
+      total: number;
+    }>(`/resume/applied?${qs.toString()}`);
+  },
+  downloadApplied: (id: string, companyId?: string) =>
+    api<{ success: boolean; downloadUrl: string; filename?: string }>(
+      `/resume/applied/${id}/download`,
+      {
+        method: 'POST',
+        body: JSON.stringify(companyId ? { companyId } : {}),
+      }
+    ),
   /** Upload PDF/DOCX/TXT → parse → auto-save student.resume */
   importStudent: (payload: { phone: string; file: File; companyId?: string }) => {
     const formData = new FormData();

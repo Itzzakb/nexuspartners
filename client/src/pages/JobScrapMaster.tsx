@@ -164,9 +164,7 @@ export default function JobScrapMaster() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl">Job Scrap Master Data</h1>
-          <p className="mt-1 text-body">
-            Add job titles (student roles) and domains. Other master values are managed in the database.
-          </p>
+          <p className="mt-1 text-body">Add job titles (student roles) and domains.</p>
         </div>
         {user?.isPlatformAdmin && (
           <select

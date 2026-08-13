@@ -6,8 +6,10 @@ import {
   downloadResumeFile,
   importStudentResume,
   resumeImportUpload,
+  listAppliedResumes,
+  downloadAppliedResume,
 } from '../controllers/resume.controller.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireModule } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -19,5 +21,8 @@ router.post('/parse', parseResume);
 router.post('/build-download', buildResume);
 router.post('/update-student', updateResume);
 router.post('/import-student', resumeImportUpload, importStudentResume);
+
+router.get('/applied', requireModule('ats'), listAppliedResumes);
+router.post('/applied/:id/download', requireModule('ats'), downloadAppliedResume);
 
 export default router;

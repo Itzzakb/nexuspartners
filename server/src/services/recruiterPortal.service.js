@@ -211,28 +211,45 @@ function escapeRegex(value) {
 }
 
 /**
- * Full-phrase role → jobTitle patterns.
- * Keeps the whole role (not individual words), but allows spacing/punctuation
- * variants so "gen ai" matches "GenAI" / "Gen-AI" in a title.
+ * Role → jobTitle match for recruiter job lists.
+ * - Multi-word roles: every word must appear in the title (any order, not necessarily
+ *   adjacent). e.g. "System Analyst" matches "Senior Systems Analyst",
+ *   "Analyst / System Design", etc.
+ * - Also allows spacing/punctuation variants so "Gen AI" matches "GenAI" / "Gen-AI".
  */
-function studentRoleTitlePatterns(student) {
+function studentRoleTitleMatchClause(student) {
   const role = (student.role || student.jobtitle || '').trim().replace(/\s+/g, ' ');
-  if (!role) return [];
+  if (!role) return null;
 
   const tokens = role.split(/[\s\-_\/]+/).filter(Boolean);
-  if (!tokens.length) return [];
+  if (!tokens.length) return null;
 
-  // Tokens in order; optional space/hyphen/underscore between them
-  const flexible = tokens.map(escapeRegex).join('[\\s\\-_]*');
-  const patterns = new Set([flexible]);
+  // Word match: optional trailing "s" for common plurals (System → Systems).
+  const wordRegexes = tokens.map((t) => `\\b${escapeRegex(t)}s?\\b`);
+  const allWordsPresent =
+    wordRegexes.length === 1
+      ? { jobTitle: { $regex: wordRegexes[0], $options: 'i' } }
+      : {
+          $and: wordRegexes.map((re) => ({
+            jobTitle: { $regex: re, $options: 'i' },
+          })),
+        };
 
-  // Literal variants as well (exact substring forms)
-  patterns.add(escapeRegex(role));
-  patterns.add(escapeRegex(tokens.join('')));
-  patterns.add(escapeRegex(tokens.join('-')));
-  patterns.add(escapeRegex(tokens.join(' ')));
+  const phrasePatterns = [
+    tokens.map(escapeRegex).join('[\\s\\-_]*'),
+    escapeRegex(tokens.join('')),
+    escapeRegex(tokens.join('-')),
+    escapeRegex(role),
+  ].filter(Boolean);
 
-  return [...patterns].filter(Boolean);
+  return {
+    $or: [
+      allWordsPresent,
+      ...phrasePatterns.map((pattern) => ({
+        jobTitle: { $regex: pattern, $options: 'i' },
+      })),
+    ],
+  };
 }
 
 function relativePostedAge(datePosted) {
@@ -395,16 +412,12 @@ export async function findJobsForStudent({
     });
   }
 
-  const rolePatterns = studentRoleTitlePatterns({ role: studentRole });
+  const roleClause = studentRoleTitleMatchClause({ role: studentRole });
   const hasQuery = !!q.trim();
 
   // When searching freely, skip role matching so recruiters can find any open job
-  if (!hasQuery && rolePatterns.length) {
-    andClauses.push({
-      $or: rolePatterns.map((pattern) => ({
-        jobTitle: { $regex: pattern, $options: 'i' },
-      })),
-    });
+  if (!hasQuery && roleClause) {
+    andClauses.push(roleClause);
   }
 
   if (hasQuery) {
@@ -657,6 +670,54 @@ export async function recordJobAction({
   return StudentJobAction.findOneAndUpdate(
     { companyId, studentPhone, scrapedJobId },
     { $set: update },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+}
+
+/**
+ * On apply: keep a per-job resume copy for interview prep / admin Search Resume.
+ * Does not overwrite an existing Fix Resume / ATS download entry.
+ */
+export async function snapshotAppliedResume({
+  company,
+  recruiter,
+  studentPhone,
+  job,
+}) {
+  const existing = await RecruiterResumeLibrary.findOne({
+    companyId: company._id,
+    recruiterUsername: recruiter.username,
+    studentPhone,
+    scrapedJobId: job._id,
+  });
+  if (existing?.resumeData || existing?.downloadUrl) {
+    return existing;
+  }
+
+  const student = await assertStudentAssignedToRecruiter(recruiter, company, studentPhone);
+  const details = await fetchStudentDetails(studentPhone).catch(() => null);
+  const resumeData = extractResumeFromStudentDetails(details);
+  if (!resumeData) return null;
+
+  return RecruiterResumeLibrary.findOneAndUpdate(
+    {
+      companyId: company._id,
+      recruiterUsername: recruiter.username,
+      studentPhone,
+      scrapedJobId: job._id,
+    },
+    {
+      $set: {
+        studentName: student.name || '',
+        jobTitle: job.jobTitle || '',
+        companyName: job.companyName || '',
+        resumeData,
+        source: 'applied',
+      },
+      $setOnInsert: {
+        downloadUrl: '',
+      },
+    },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 }

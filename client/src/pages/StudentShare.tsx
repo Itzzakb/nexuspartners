@@ -122,9 +122,9 @@ export default function StudentShare() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatCard label="Today" value={activity.today || 0} tone="blue" />
-          <StatCard label="Week" value={activity.week || 0} tone="green" />
-          <StatCard label="Month" value={activity.month || 0} tone="purple" />
+          <StatCard label="Applied today" value={activity.today || 0} tone="blue" />
+          <StatCard label="This week" value={activity.week || 0} tone="green" />
+          <StatCard label="This month" value={activity.month || 0} tone="purple" />
         </div>
 
         {detailEntries.length > 0 && (
@@ -140,10 +140,6 @@ export default function StudentShare() {
             </div>
           </div>
         )}
-
-        <p className="text-center text-xs text-body">
-          Read-only view · Opened with student mobile · Applications applied today / week / month
-        </p>
       </div>
     </div>
   );
