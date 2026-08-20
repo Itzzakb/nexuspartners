@@ -4,6 +4,7 @@ export interface StudentDetailsPdfInput {
   firstName: string;
   lastName: string;
   role: string;
+  jobSearchCountry?: string;
   email: string;
   phone: string;
   linkedin: string;
@@ -190,6 +191,7 @@ function buildLines(input: StudentDetailsPdfInput): PdfLine[] {
     { kind: 'row', label: 'First Name', value: input.firstName },
     { kind: 'row', label: 'Last Name', value: input.lastName },
     { kind: 'row', label: 'Role / Job Title', value: input.role },
+    { kind: 'row', label: 'Job search country', value: input.jobSearchCountry || '' },
     { kind: 'spacer' },
     { kind: 'section', text: 'Contact Information' },
     { kind: 'row', label: 'Email', value: input.email },

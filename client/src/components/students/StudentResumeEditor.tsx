@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Briefcase,
   ChevronDown,
@@ -14,7 +14,8 @@ import {
   X,
 } from 'lucide-react';
 import { Toggle } from '@/components/ui/Toggle';
-import { resumeParseApi, resumeTemplateApi } from '@/lib/api';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { resumeParseApi, resumeTemplateApi, studentApi } from '@/lib/api';
 import {
   detailsToEditableDraft,
   editableDraftToResumeData,
@@ -57,6 +58,8 @@ export function StudentResumeEditor({
   const [expandedEdu, setExpandedEdu] = useState<string | null>(null);
   const [expandedCert, setExpandedCert] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [masterRoles, setMasterRoles] = useState<string[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -75,6 +78,31 @@ export function StudentResumeEditor({
       })
       .catch(() => {});
   }, [student.companyId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRolesLoading(true);
+    studentApi
+      .jobRoles(student.companyId)
+      .then((data) => {
+        if (!cancelled) setMasterRoles(Array.isArray(data.jobroles) ? data.jobroles : []);
+      })
+      .catch(() => {
+        if (!cancelled) setMasterRoles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRolesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [student.companyId]);
+
+  const jobTitleOptions = useMemo(() => {
+    const set = new Set(masterRoles);
+    if (draft.jobtitle) set.add(draft.jobtitle);
+    return Array.from(set).map((r) => ({ value: r, label: r }));
+  }, [masterRoles, draft.jobtitle]);
 
   const updateDraft = (updater: (prev: EditableResumeDraft) => EditableResumeDraft) => {
     setDraft(updater);
@@ -176,11 +204,17 @@ export function StudentResumeEditor({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="mb-1.5 block font-medium text-heading">Job Title</span>
-            <input
-              className="np-input"
+            <SearchableSelect
+              options={jobTitleOptions}
               value={draft.jobtitle}
-              onChange={(e) => updateDraft((prev) => ({ ...prev, jobtitle: e.target.value }))}
+              onChange={(jobtitle) => updateDraft((prev) => ({ ...prev, jobtitle }))}
               placeholder="e.g. Data Analyst"
+              searchPlaceholder="Search job titles…"
+              allowClear
+              allowCreate
+              createHint="Use this title"
+              loading={rolesLoading}
+              loadingMessage="Loading roles…"
             />
           </label>
           <label className="block text-sm">

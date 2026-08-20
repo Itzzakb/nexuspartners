@@ -8,6 +8,7 @@ import { ticketApi } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { TicketCard } from '@/components/tickets/TicketCard';
 import { DeletedTicketCard } from '@/components/tickets/DeletedTicketCard';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import type { Ticket, TicketView } from '@/types/ticket';
 
 const VIEW_OPTIONS: { value: TicketView; label: string }[] = [
@@ -152,19 +153,20 @@ export default function Tickets() {
 
         {view === 'all' && (
           <>
-            <select
-              className="np-input !w-auto min-w-[160px]"
+            <SearchableSelect
+              className="min-w-[200px] max-w-[240px]"
+              size="sm"
+              options={[
+                { value: 'unallocated', label: 'Unallocated' },
+                ...resumeMembers.map((m) => ({ value: m.id, label: m.name })),
+              ]}
               value={assignedTo}
-              onChange={(e) => setFilter('assignedTo', e.target.value)}
-            >
-              <option value="">All assignments</option>
-              <option value="unallocated">Unallocated</option>
-              {resumeMembers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+              onChange={(next) => setFilter('assignedTo', next)}
+              placeholder="All assignments"
+              emptyLabel="All assignments"
+              searchPlaceholder="Search assignments…"
+              allowClear
+            />
 
             <select
               className="np-input !w-auto min-w-[140px]"

@@ -18,6 +18,7 @@ import { useAuth } from '@/context/AuthContext';
 import { ticketApi, uploadFile, externalApi } from '@/lib/api';
 import { toPublicAppUrl } from '@/lib/publicAppUrl';
 import { StudentSearch } from '@/components/students/StudentSearch';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import type { ExternalStudent, ExternalRecruiter } from '@/types/phase4';
 import { StageBadge } from '@/components/tickets/StageBadge';
 import { ResumeFormDetails } from '@/components/resumeForm/ResumeFormDetails';
@@ -691,19 +692,21 @@ export default function TicketDetail() {
           {(user?.role === 'resume' || user?.isCompanyAdmin || user?.isPlatformAdmin) && (
             <div>
               <h3 className="text-sm font-medium text-heading">Allocate Resume Editor</h3>
-              <select
-                className="np-input mt-2"
-                value={ticket.assignedTo || ''}
-                onChange={(e) => handleAssign(e.target.value)}
-                disabled={actionLoading}
-              >
-                <option value="">Unallocated</option>
-                {resumeMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.email})
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <SearchableSelect
+                  options={resumeMembers.map((m) => ({
+                    value: m.id,
+                    label: `${m.name} (${m.email})`,
+                  }))}
+                  value={ticket.assignedTo || ''}
+                  onChange={(next) => handleAssign(next)}
+                  placeholder="Unallocated"
+                  emptyLabel="Unallocated"
+                  searchPlaceholder="Search editors…"
+                  allowClear
+                  disabled={actionLoading}
+                />
+              </div>
             </div>
           )}
 
@@ -787,20 +790,19 @@ export default function TicketDetail() {
               <h3 className="text-sm font-medium text-heading">Onboarding / Recruiter</h3>
               <div className="mt-2 flex flex-wrap items-end gap-3">
                 <div className="min-w-[220px] flex-1">
-                  <select
-                    className="np-input w-full"
+                  <SearchableSelect
+                    options={recruiters.map((r) => ({
+                      value: r.username || '',
+                      label: `${r.name || r.username || 'Recruiter'}${r.username ? ` (@${r.username})` : ''}`,
+                    })).filter((o) => o.value)}
                     value={selectedRecruiter}
-                    onChange={(e) => setSelectedRecruiter(e.target.value)}
+                    onChange={setSelectedRecruiter}
+                    placeholder="— No recruiter —"
+                    emptyLabel="— No recruiter —"
+                    searchPlaceholder="Search recruiters…"
+                    allowClear
                     disabled={actionLoading || !ticket.studentId}
-                  >
-                    <option value="">— No recruiter —</option>
-                    {recruiters.map((r, i) => (
-                      <option key={r.username || i} value={r.username || ''}>
-                        {r.name || r.username}
-                        {r.username ? ` (@${r.username})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <button
                   type="button"

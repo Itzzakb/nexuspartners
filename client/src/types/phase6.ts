@@ -1,15 +1,63 @@
 export type LeaveStatus = 'pending' | 'approved' | 'rejected';
 export type BillingStatus = 'draft' | 'finalized' | 'invoiced';
 
+export interface SalaryEmployee {
+  key: string;
+  type: 'user' | 'recruiter';
+  id: string;
+  name: string;
+  email: string;
+  label: string;
+  role?: string;
+  username?: string;
+}
+
+export type SalaryRowCategory = 'with_salary' | 'no_salary' | 'discontinued';
+
+export interface SalaryDashboardRow {
+  employeeKey: string;
+  employeeType: 'user' | 'recruiter';
+  employeeId: string;
+  name: string;
+  email: string;
+  category: SalaryRowCategory;
+  salaryId: string | null;
+  startDate: string | null;
+  monthlySalary: number;
+  currency: string;
+  allowedLeaves: number;
+  status: 'active' | 'discontinued';
+  notes: string;
+  leaveDays: number;
+  deductibleDays: number;
+  leaveDates: string[];
+  expected: number;
+  actual: number;
+  monthlyLeaveId: string | null;
+}
+
+export interface SalaryDashboardStats {
+  totalEmployees: number;
+  noSalarySet: number;
+  withSalary: number;
+  discontinued: number;
+  expectedTotal: number;
+  actualTotal: number;
+}
+
 export interface EmployeeSalary {
   id: string;
+  employeeType?: 'user' | 'recruiter';
   userId: string;
+  recruiterId?: string;
   userName: string;
   userEmail: string;
   companyId: string;
   monthlySalary: number;
   currency: string;
   effectiveFrom: string | null;
+  allowedLeaves?: number;
+  status?: 'active' | 'discontinued';
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -17,7 +65,9 @@ export interface EmployeeSalary {
 
 export interface EmployeeLeave {
   id: string;
+  employeeType?: 'user' | 'recruiter';
   userId: string;
+  recruiterId?: string;
   userName: string;
   companyId: string;
   leaveType: string;

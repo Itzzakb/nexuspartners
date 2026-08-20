@@ -14,6 +14,7 @@ import {
   normalizePhone,
 } from './nexusStudentApi.service.js';
 import { scrapedJobToJSON, extractExperienceYears } from './jobScrap.service.js';
+import { listActiveCountries } from './jobScrapMaster.service.js';
 import { fixResumeForJob, scoreResumeAtsWithGemini, ATS_TARGET_SCORE } from './gemini.service.js';
 import { getPromptByKey } from '../controllers/prompt.controller.js';
 import RecruiterResumeLibrary from '../models/RecruiterResumeLibrary.js';
@@ -86,6 +87,9 @@ export function normalizeRecruiterStudent(raw, companyId) {
     city,
     state,
     location,
+    jobSearchCountry: String(raw.jobSearchCountry || raw.job_search_country || '')
+      .trim()
+      .toUpperCase(),
     isActive,
     resumeStatus,
     companyId,
@@ -343,6 +347,7 @@ export async function findJobsForStudent({
   minExp,
   maxExp,
   sponsored,
+  country,
 }) {
   const dropped = await StudentJobAction.find({
     companyId,
@@ -360,6 +365,12 @@ export async function findJobsForStudent({
   if (source) filter.source = source;
   if (remote === true || remote === 'true') filter.remote = true;
   if (remote === false || remote === 'false') filter.remote = false;
+
+  const countryCode = String(country || '').trim().toUpperCase();
+  if (countryCode) {
+    const escaped = countryCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.countryCode = { $regex: `^${escaped}$`, $options: 'i' };
+  }
 
   if (scrapedFrom || scrapedTo) {
     filter.createdAt = {};
@@ -437,12 +448,13 @@ export async function findJobsForStudent({
     filter.$and = andClauses;
   }
 
-  const [items, total] = await Promise.all([
+  const [items, total, countries] = await Promise.all([
     ScrapedJob.find(filter)
       .sort({ datePosted: -1, createdAt: -1 })
       .skip(page * limit)
       .limit(limit),
     ScrapedJob.countDocuments(filter),
+    listJobCountryOptions(companyId),
   ]);
 
   const actions = await StudentJobAction.find({
@@ -458,7 +470,21 @@ export async function findJobsForStudent({
     return enrichJobForRecruiter(json, doc, action);
   });
 
-  return { jobs, total, page, limit };
+  return { jobs, total, page, limit, countries };
+}
+
+async function listJobCountryOptions(companyId) {
+  const master = await listActiveCountries(companyId);
+  if (master.length) return master;
+
+  const codes = await ScrapedJob.distinct('countryCode', {
+    companyId,
+    status: 'open',
+    countryCode: { $nin: [null, ''] },
+  });
+  return [...new Set(codes.map((c) => String(c || '').trim().toUpperCase()).filter(Boolean))]
+    .sort()
+    .map((value) => ({ value, label: value }));
 }
 
 function parseExperienceFilter(value) {

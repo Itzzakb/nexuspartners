@@ -14,6 +14,8 @@ const studentSchema = new mongoose.Schema(
     role: { type: String, default: '' },
     city: { type: String, default: '' },
     state: { type: String, default: '' },
+    /** ISO-2 country code used to auto-filter recruiter job search (e.g. US, IN). */
+    jobSearchCountry: { type: String, default: '', trim: true, uppercase: true },
     linkedin: { type: String, default: '' },
     status: { type: String, enum: STATUS, default: 'active' },
     resume: { type: mongoose.Schema.Types.Mixed, default: null },

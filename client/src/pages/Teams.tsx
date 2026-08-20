@@ -5,6 +5,7 @@ import { useCompanies } from '@/context/CompanyContext';
 import { teamApi, externalApi } from '@/lib/api';
 import type { Team, TeamMember, ExternalRecruiter } from '@/types/phase4';
 import { toast } from '@/lib/toast';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 export default function Teams() {
   const { user } = useAuth();
@@ -130,14 +131,20 @@ export default function Teams() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <select className="np-input max-w-xs" value={memberPick} onChange={(e) => setMemberPick(e.target.value)}>
-              <option value="">Add recruiter...</option>
-              {recruiters.map((r, i) => (
-                <option key={i} value={r.username as string}>
-                  {(r.name as string) || r.username} ({r.username})
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              className="max-w-xs flex-1"
+              options={recruiters
+                .filter((r) => r.username)
+                .map((r) => ({
+                  value: r.username as string,
+                  label: `${(r.name as string) || r.username} (${r.username})`,
+                }))}
+              value={memberPick}
+              onChange={setMemberPick}
+              placeholder="Add recruiter..."
+              emptyLabel="Add recruiter..."
+              searchPlaceholder="Search recruiters…"
+            />
             <button type="button" className="np-btn-secondary" onClick={addMember}>Add member</button>
           </div>
 

@@ -6,6 +6,7 @@ import { useCompanies } from '@/context/CompanyContext';
 import { studentApi } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import type { StudentListItem, StudentListStats } from '@/types/phase7';
 
 type StatusFilter = 'all' | 'active' | 'inactive' | 'suspended';
@@ -173,18 +174,18 @@ export default function Students() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <select
-          className="np-input max-w-[180px] bg-muted/40"
+        <SearchableSelect
+          className="w-full max-w-[220px]"
+          triggerClassName="bg-muted/40"
+          size="sm"
+          options={roles.map((role) => ({ value: role, label: role }))}
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-        >
-          <option value="">All Roles</option>
-          {roles.map((role) => (
-            <option key={role} value={role}>
-              {role}
-            </option>
-          ))}
-        </select>
+          onChange={setRoleFilter}
+          placeholder="All Roles"
+          emptyLabel="All Roles"
+          searchPlaceholder="Search roles…"
+          allowClear
+        />
         <select
           className="np-input max-w-[140px] bg-muted/40"
           value={daysFilter}

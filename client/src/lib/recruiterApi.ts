@@ -191,6 +191,7 @@ export const recruiterJobsApi = {
     minExp?: number;
     maxExp?: number;
     sponsored?: boolean;
+    country?: string;
   }) => {
     const qs = new URLSearchParams();
     qs.set('studentPhone', params.studentPhone);
@@ -204,11 +205,13 @@ export const recruiterJobsApi = {
     if (params.minExp !== undefined) qs.set('minExp', String(params.minExp));
     if (params.maxExp !== undefined) qs.set('maxExp', String(params.maxExp));
     if (params.sponsored !== undefined) qs.set('sponsored', String(params.sponsored));
+    if (params.country) qs.set('country', params.country);
     return recruiterApi<{
       jobs: RecruiterScrapedJob[];
       total: number;
       page: number;
       limit: number;
+      countries?: Array<{ value: string; label: string }>;
     }>(`/jobs?${qs.toString()}`);
   },
 

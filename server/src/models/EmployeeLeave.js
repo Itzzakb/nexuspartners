@@ -2,10 +2,13 @@ import mongoose from 'mongoose';
 
 const LEAVE_STATUSES = ['pending', 'approved', 'rejected'];
 const LEAVE_TYPES = ['casual', 'sick', 'unpaid', 'other'];
+const EMPLOYEE_TYPES = ['user', 'recruiter'];
 
 const employeeLeaveSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    employeeType: { type: String, enum: EMPLOYEE_TYPES, default: 'user' },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'RecruiterAccount', default: null },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
     leaveType: { type: String, enum: LEAVE_TYPES, default: 'casual' },
     startDate: { type: Date, required: true },
@@ -20,6 +23,7 @@ const employeeLeaveSchema = new mongoose.Schema(
 );
 
 employeeLeaveSchema.index({ companyId: 1, userId: 1 });
+employeeLeaveSchema.index({ companyId: 1, recruiterId: 1 });
 
 export default mongoose.model('EmployeeLeave', employeeLeaveSchema);
-export { LEAVE_STATUSES, LEAVE_TYPES };
+export { LEAVE_STATUSES, LEAVE_TYPES, EMPLOYEE_TYPES as LEAVE_EMPLOYEE_TYPES };

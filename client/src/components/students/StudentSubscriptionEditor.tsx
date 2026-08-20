@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Building2, CalendarDays, ListChecks, Pencil } from 'lucide-react';
 import { externalApi, studentApi } from '@/lib/api';
 import { formatMoney } from '@/lib/studentResume';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import type { ExternalRecruiter } from '@/types/phase4';
 import type { StudentDetail } from '@/types/phase7';
 
@@ -193,21 +194,24 @@ export function StudentSubscriptionEditor({
             </label>
             <label className="block text-sm">
               <span className="mb-1.5 block font-medium text-heading">Recruiter</span>
-              <select
-                className="np-input bg-muted/40"
+              <SearchableSelect
+                triggerClassName="bg-muted/40"
+                options={[
+                  ...recruiters.map((r) => ({
+                    value: r.username || '',
+                    label: r.name || r.username || 'Recruiter',
+                  })),
+                  ...(recruiter && !recruiters.some((r) => r.username === recruiter)
+                    ? [{ value: recruiter, label: recruiter }]
+                    : []),
+                ].filter((o) => o.value)}
                 value={recruiter}
-                onChange={(e) => setRecruiter(e.target.value)}
-              >
-                <option value="">— No recruiter —</option>
-                {recruiters.map((r) => (
-                  <option key={String(r.username || r.email || r.name)} value={r.username || ''}>
-                    {r.name || r.username}
-                  </option>
-                ))}
-                {recruiter && !recruiters.some((r) => r.username === recruiter) && (
-                  <option value={recruiter}>{recruiter}</option>
-                )}
-              </select>
+                onChange={setRecruiter}
+                placeholder="— No recruiter —"
+                emptyLabel="— No recruiter —"
+                searchPlaceholder="Search recruiters…"
+                allowClear
+              />
             </label>
           </div>
         </section>

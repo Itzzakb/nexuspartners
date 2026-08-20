@@ -196,6 +196,8 @@ const routes = [
   // Students
   { tag: 'Students', method: 'get', path: '/students', summary: 'List students' },
   { tag: 'Students', method: 'post', path: '/students', summary: 'Create student record', body: true },
+  { tag: 'Students', method: 'get', path: '/students/job-roles', summary: 'List job titles for student role dropdown' },
+  { tag: 'Students', method: 'get', path: '/students/job-countries', summary: 'List countries for student job-search country dropdown' },
   { tag: 'Students', method: 'get', path: '/students/lookup', summary: 'Lookup student by phone', params: [{ name: 'phone', in: 'query', required: true }] },
   { tag: 'Students', method: 'get', path: '/students/ticket/{ticketId}/profile', summary: 'Ticket student profile', params: [{ name: 'ticketId', in: 'path', required: true }] },
   { tag: 'Students', method: 'post', path: '/students/ticket/{ticketId}/create', summary: 'Create student from ticket', params: [{ name: 'ticketId', in: 'path', required: true }], body: true },

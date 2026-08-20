@@ -251,6 +251,7 @@ export async function listJobs(req, res) {
       minExp: req.query.minExp ?? req.query.experienceMin,
       maxExp: req.query.maxExp ?? req.query.experienceMax,
       sponsored: req.query.sponsored ?? req.query.isSponsored,
+      country: req.query.country || req.query.countryCode,
     });
 
     return res.json(result);

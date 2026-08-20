@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { DateRangeCalendar } from '@/components/recruiter/DateRangeCalendar';
 import { ExperienceRangeSlider } from '@/components/recruiter/ExperienceRangeSlider';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { recruiterJobsApi, recruiterStudentsApi } from '@/lib/recruiterApi';
 import { toast } from '@/lib/toast';
 import type { RecruiterScrapedJob, RecruiterStudent } from '@/types/recruiterPortal';
@@ -69,6 +70,7 @@ function JobCard({
             {job.location}
           </span>
         )}
+        {job.countryCode && <span>{job.countryCode}</span>}
         {job.datePosted && <span>Posted {formatDate(job.datePosted)}</span>}
         {job.remote && <span className="text-primary">Remote</span>}
       </div>
@@ -94,6 +96,8 @@ export default function RecruiterApplications() {
   const [expMax, setExpMax] = useState(EXP_CEILING);
   const [expFilterActive, setExpFilterActive] = useState(false);
   const [sponsoredFilter, setSponsoredFilter] = useState<'any' | 'yes' | 'no'>('any');
+  const [countryFilter, setCountryFilter] = useState('');
+  const [countries, setCountries] = useState<Array<{ value: string; label: string }>>([]);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [filteringJobs, setFilteringJobs] = useState(false);
@@ -105,7 +109,9 @@ export default function RecruiterApplications() {
       const data = await recruiterStudentsApi.list(q);
       setStudents(data.students);
       if (!selectedPhone && data.students.length > 0) {
-        setSelectedPhone(data.students[0].phone);
+        const first = data.students[0];
+        setSelectedPhone(first.phone);
+        setCountryFilter(String(first.jobSearchCountry || '').trim().toUpperCase());
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load students');
@@ -143,9 +149,11 @@ export default function RecruiterApplications() {
           : sponsoredFilter === 'no'
             ? { sponsored: false }
             : {}),
+        ...(countryFilter ? { country: countryFilter } : {}),
       });
       setJobs(data.jobs);
       setTotal(data.total);
+      if (Array.isArray(data.countries)) setCountries(data.countries);
       showFullLoaderRef.current = false;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load jobs');
@@ -163,6 +171,7 @@ export default function RecruiterApplications() {
     expMax,
     expFilterActive,
     sponsoredFilter,
+    countryFilter,
   ]);
 
   useEffect(() => {
@@ -223,6 +232,7 @@ export default function RecruiterApplications() {
                   type="button"
                   onClick={() => {
                     setSelectedPhone(student.phone);
+                    setCountryFilter(String(student.jobSearchCountry || '').trim().toUpperCase());
                     setPage(0);
                   }}
                   className={cn(
@@ -259,6 +269,12 @@ export default function RecruiterApplications() {
                   <h2 className="text-lg font-semibold text-heading">{selectedStudent.name}</h2>
                   <p className="text-sm text-body">
                     {selectedStudent.role || 'No role'} · {selectedStudent.location || 'No location'}
+                    {selectedStudent.jobSearchCountry
+                      ? ` · Jobs in ${
+                          countries.find((c) => c.value === selectedStudent.jobSearchCountry)?.label
+                          || selectedStudent.jobSearchCountry
+                        }`
+                      : ''}
                   </p>
                   <p className="text-xs text-body">
                     {selectedStudent.phone}
@@ -341,6 +357,23 @@ export default function RecruiterApplications() {
                   <option value="yes">Sponsored only</option>
                   <option value="no">Not sponsored</option>
                 </select>
+              </div>
+
+              <div className="min-w-[200px] flex-1 sm:max-w-xs">
+                <label className="mb-1 block text-xs font-medium text-body">Country</label>
+                <SearchableSelect
+                  size="sm"
+                  options={countries}
+                  value={countryFilter}
+                  onChange={(next) => {
+                    setCountryFilter(next);
+                    setPage(0);
+                  }}
+                  placeholder="All countries"
+                  emptyLabel="All countries"
+                  searchPlaceholder="Search countries…"
+                  allowClear
+                />
               </div>
             </div>
             {filteringJobs && (

@@ -23,6 +23,7 @@ import { toast } from '@/lib/toast';
 import { canAccessModule } from '@/lib/permissions';
 import { Toggle, ToggleField } from '@/components/ui/Toggle';
 import { MultiSelectSearch } from '@/components/ui/MultiSelectSearch';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { PostedTimeFilter } from '@/components/jobScrap/PostedTimeFilter';
 import { cn } from '@/lib/utils';
 import type {
@@ -906,16 +907,15 @@ export default function JobScrap() {
           <div className="np-card flex flex-wrap items-end gap-3 p-4">
             <div className="min-w-[220px]">
               <label className="mb-1 block text-xs font-medium text-heading">Country</label>
-              <select
-                className="np-input w-full"
+              <SearchableSelect
+                options={profileCountryOptions}
                 value={profileCountryFilter}
-                onChange={(e) => setProfileCountryFilter(e.target.value)}
-              >
-                <option value="">All countries</option>
-                {profileCountryOptions.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+                onChange={setProfileCountryFilter}
+                placeholder="All countries"
+                emptyLabel="All countries"
+                searchPlaceholder="Search countries…"
+                allowClear
+              />
             </div>
             {profileCountryFilter && (
               <button

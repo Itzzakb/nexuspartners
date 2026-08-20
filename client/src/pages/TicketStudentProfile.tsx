@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, UserPlus } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { studentApi } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 interface StudentForm {
   name: string;
@@ -45,6 +46,9 @@ export default function TicketStudentProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [ticketCompanyId, setTicketCompanyId] = useState('');
+  const [masterRoles, setMasterRoles] = useState<string[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
 
   useEffect(() => {
     if (!ticketId) return;
@@ -59,6 +63,7 @@ export default function TicketStudentProfile() {
 
         setTicketNumber(data.ticket?.ticketNumber || '');
         setFormStatus(data.ticket?.resumeFormStatus || 'unfilled');
+        setTicketCompanyId(data.ticket?.companyId || '');
         setForm({
           ...emptyForm,
           ...(data.prefill || {}),
@@ -73,6 +78,31 @@ export default function TicketStudentProfile() {
 
     load();
   }, [ticketId, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRolesLoading(true);
+    studentApi
+      .jobRoles(ticketCompanyId || undefined)
+      .then((data) => {
+        if (!cancelled) setMasterRoles(Array.isArray(data.jobroles) ? data.jobroles : []);
+      })
+      .catch(() => {
+        if (!cancelled) setMasterRoles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRolesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketCompanyId]);
+
+  const roleOptions = useMemo(() => {
+    const set = new Set(masterRoles);
+    if (form.role) set.add(form.role);
+    return Array.from(set).map((r) => ({ value: r, label: r }));
+  }, [masterRoles, form.role]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -152,11 +182,22 @@ export default function TicketStudentProfile() {
             value={form.email}
             onChange={(email) => setForm({ ...form, email })}
           />
-          <Field
-            label="Role / Job Title"
-            value={form.role}
-            onChange={(role) => setForm({ ...form, role })}
-          />
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-heading">Role / Job Title</label>
+            <SearchableSelect
+              options={roleOptions}
+              value={form.role}
+              onChange={(role) => setForm({ ...form, role })}
+              placeholder="Select role"
+              emptyLabel="Select role"
+              searchPlaceholder="Search roles…"
+              allowClear
+              allowCreate
+              createHint="Use this role"
+              loading={rolesLoading}
+              loadingMessage="Loading roles…"
+            />
+          </div>
           <Field
             label="LinkedIn"
             value={form.linkedin}

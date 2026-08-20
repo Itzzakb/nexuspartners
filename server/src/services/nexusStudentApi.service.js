@@ -45,6 +45,7 @@ export function toExternalStudentShape(doc) {
     role: o.role || '',
     city: o.city || '',
     state: o.state || '',
+    jobSearchCountry: String(o.jobSearchCountry || '').trim().toUpperCase(),
     linkedin: o.linkedin || '',
     status: o.status || 'active',
     resume: o.resume || null,
@@ -325,6 +326,12 @@ export async function updateStudentProfile(phone, payload = {}, companyId) {
   setIf('role', payload.role !== undefined ? String(payload.role || '').trim() : undefined);
   setIf('city', payload.city !== undefined ? String(payload.city || '').trim() : undefined);
   setIf('state', payload.state !== undefined ? String(payload.state || '').trim() : undefined);
+  setIf(
+    'jobSearchCountry',
+    payload.jobSearchCountry !== undefined
+      ? String(payload.jobSearchCountry || '').trim().toUpperCase()
+      : undefined
+  );
   setIf('linkedin', payload.linkedin !== undefined ? String(payload.linkedin || '').trim() : undefined);
   setIf('visa', payload.visa !== undefined ? String(payload.visa || '').trim() : undefined);
   setIf(

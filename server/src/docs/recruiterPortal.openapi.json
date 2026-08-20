@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Nexus Partners — Recruiter Portal API",
-    "description": "REST API for the Nexus Partners recruiter desktop/web app.\n\n## Authentication\n1. Call `POST /auth/login` with recruiter username and password.\n2. Store the returned `accessToken`.\n3. Send `Authorization: Bearer <accessToken>` on all protected endpoints.\n\nRecruiter tokens are separate from admin portal tokens (`type: recruiter` in JWT payload).\n\n## Related docs\n- **Platform Admin API**: [/api/docs](/api/docs)\n- Raw OpenAPI JSON: [/api/docs/recruiter/openapi.json](/api/docs/recruiter/openapi.json)\n\n## Typical flows\n**Job apply (with copy/paste side panel)**\n1. Login → get token\n2. `GET /students` → list assigned students\n3. `GET /jobs?studentPhone=...&minExp=2&maxExp=5&sponsored=true` → matched jobs (optional experience + sponsored filters)\n4. `GET /jobs/{id}?studentPhone=...` → job detail (includes `isApplied`, `isSponsored`)\n5. Option A: `POST /jobs/{id}/apply` → returns `applyUrl` **and** `studentForm` (open URL + show form fields side-by-side)\n6. Option B: `GET /students/{phone}/resume-form` anytime to load the same form payload before/after apply\n\n**Application Tracker**\n1. `GET /applications` → paginated tracker rows\n2. `PATCH /applications/{id}/status` → move through pipeline statuses\n\n**Dashboard / Analytics**\n1. `GET /dashboard?range=7d` → KPIs, trend, recent activity\n2. `GET /analytics` → status breakdown and conversion\n\n## Notes\n- `studentPhone` is the student's phone number (primary identifier).\n- Job list excludes jobs previously **dropped** for that student.\n- Without `q`, job matching uses the student's role keywords against `jobTitle`. Free-text `q` searches broadly and skips strict role match.\n- `minExp` / `maxExp` (aliases `experienceMin` / `experienceMax`) filter jobs by overlapping experience years. Job bands come from explicit years, parsed text, or seniority.\n- `sponsored` / `isSponsored` (`true`|`false`) filters jobs that mention visa sponsorship (H1B / sponsor keywords in description or notes).\n- Each job includes `isApplied` (student already applied / in pipeline) and `isSponsored` (alias of `visaSponsorship`) for card UI. Prefer these flags over parsing `urlDomain` for display — clients should not show scrape source domains on job cards.\n- `scrapedFrom` / `scrapedTo` filter on job `createdAt` (YYYY-MM-DD).\n- Pagination: `page` is zero-based; jobs default `limit` 20 (max 50); applications/resume-library default 50 (max 100).\n- Application statuses: `saved`, `applied`, `interview_scheduled`, `interview_completed`, `offer_received`, `hired`, `rejected`, `dropped`.\n- Resume Library entries are created automatically on Fix Resume / ATS download.\n- **Fix Resume** uses Gemini to tailor the student resume JSON to the job, then saves via the Nexus Partners student API. Optional `improvements[]` can guide the rewrite.\n- **ATS score** on library entries is Gemini-scored (target **90+**) and includes `atsImprovements`, `atsSummary`, `atsMeetsTarget`.\n- **Download ATS Resume** builds a job-specific ATS DOCX via the resume build API.\n- **Student resume form** (`GET /students/{phone}/resume-form` and apply `studentForm`) returns the ticket form the student filled, including **resume email password in plain text**, for recruiter copy/paste into external apply sites. Only assigned recruiters can access it.",
-    "version": "1.3.0",
+    "description": "REST API for the Nexus Partners recruiter desktop/web app.\n\n## Authentication\n1. Call `POST /auth/login` with recruiter username and password.\n2. Store the returned `accessToken`.\n3. Send `Authorization: Bearer <accessToken>` on all protected endpoints.\n\nRecruiter tokens are separate from admin portal tokens (`type: recruiter` in JWT payload).\n\n## Related docs\n- **Platform Admin API**: [/api/docs](/api/docs)\n- Raw OpenAPI JSON: [/api/docs/recruiter/openapi.json](/api/docs/recruiter/openapi.json)\n\n## Typical flows\n**Job apply (with copy/paste side panel)**\n1. Login → get token\n2. `GET /students` → list assigned students\n3. `GET /jobs?studentPhone=...&minExp=2&maxExp=5&sponsored=true&country=US` → matched jobs (optional experience, sponsored, and country filters)\n4. `GET /jobs/{id}?studentPhone=...` → job detail (includes `isApplied`, `isSponsored`)\n5. Option A: `POST /jobs/{id}/apply` → returns `applyUrl` **and** `studentForm` (open URL + show form fields side-by-side)\n6. Option B: `GET /students/{phone}/resume-form` anytime to load the same form payload before/after apply\n\n**Application Tracker**\n1. `GET /applications` → paginated tracker rows\n2. `PATCH /applications/{id}/status` → move through pipeline statuses\n\n**Dashboard / Analytics**\n1. `GET /dashboard?range=7d` → KPIs, trend, recent activity\n2. `GET /analytics` → status breakdown and conversion\n\n## Notes\n- `studentPhone` is the student's phone number (primary identifier).\n- Job list excludes jobs previously **dropped** for that student.\n- Without `q`, job matching uses the student's role keywords against `jobTitle`. Free-text `q` searches broadly and skips strict role match.\n- `minExp` / `maxExp` (aliases `experienceMin` / `experienceMax`) filter jobs by overlapping experience years. Job bands come from explicit years, parsed text, or seniority.\n- `sponsored` / `isSponsored` (`true`|`false`) filters jobs that mention visa sponsorship (H1B / sponsor keywords in description or notes).\n- `country` / `countryCode` (ISO-2, e.g. `US`) filters jobs by `countryCode`. The list response includes a `countries` array for filter dropdowns. Each student includes `jobSearchCountry`; the recruiter UI auto-applies that as the jobs `country` filter when the student is selected (recruiters can still change or clear it).\n- Each job includes `isApplied` (student already applied / in pipeline) and `isSponsored` (alias of `visaSponsorship`) for card UI. Prefer these flags over parsing `urlDomain` for display — clients should not show scrape source domains on job cards.\n- `scrapedFrom` / `scrapedTo` filter on job `createdAt` (YYYY-MM-DD).\n- Pagination: `page` is zero-based; jobs default `limit` 20 (max 50); applications/resume-library default 50 (max 100).\n- Application statuses: `saved`, `applied`, `interview_scheduled`, `interview_completed`, `offer_received`, `hired`, `rejected`, `dropped`.\n- Resume Library entries are created automatically on Fix Resume / ATS download.\n- **Fix Resume** uses Gemini to tailor the student resume JSON to the job, then saves via the Nexus Partners student API. Optional `improvements[]` can guide the rewrite.\n- **ATS score** on library entries is Gemini-scored (target **90+**) and includes `atsImprovements`, `atsSummary`, `atsMeetsTarget`.\n- **Download ATS Resume** builds a job-specific ATS DOCX via the resume build API.\n- **Student resume form** (`GET /students/{phone}/resume-form` and apply `studentForm`) returns the ticket form the student filled, including **resume email password in plain text**, for recruiter copy/paste into external apply sites. Only assigned recruiters can access it.",
+    "version": "1.4.0",
     "contact": {
       "name": "Nexus Partners",
       "url": "https://nexuspartners.com"
@@ -19,7 +19,7 @@
     { "name": "Auth", "description": "Recruiter login and session" },
     { "name": "Dashboard", "description": "Home KPIs, trends, and recent activity" },
     { "name": "Students", "description": "Assigned students, profiles, notes, tickets" },
-    { "name": "Jobs", "description": "Scraped jobs matched to a student" },
+    { "name": "Jobs", "description": "Scraped jobs matched to a student. List supports search, date range, experience, sponsored, and country filters." },
     { "name": "Applications", "description": "Application Tracker pipeline" },
     { "name": "Resume", "description": "Tailor and download ATS resumes" },
     { "name": "Resume Library", "description": "Persisted job-specific resumes generated by the recruiter" },
@@ -64,6 +64,22 @@
         "properties": {
           "value": { "$ref": "#/components/schemas/ApplicationStatus" },
           "label": { "type": "string", "example": "Interview Scheduled" }
+        }
+      },
+      "CountryOption": {
+        "type": "object",
+        "required": ["value", "label"],
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "ISO-2 country code used as the `country` query value",
+            "example": "US"
+          },
+          "label": {
+            "type": "string",
+            "description": "Display label for the country filter dropdown",
+            "example": "United States (US)"
+          }
         }
       },
       "RecruiterAccount": {
@@ -134,6 +150,11 @@
           "location": { "type": "string", "example": "Hyderabad" },
           "city": { "type": "string" },
           "state": { "type": "string" },
+          "jobSearchCountry": {
+            "type": "string",
+            "example": "US",
+            "description": "ISO-2 country for job search. Recruiter job list should default the `country` filter to this value."
+          },
           "isActive": { "type": "boolean", "example": true },
           "resumeStatus": {
             "type": "string",
@@ -329,7 +350,11 @@
           "companyName": { "type": "string", "example": "Acme Corp" },
           "companyDomain": { "type": "string" },
           "location": { "type": "string", "example": "Remote, US" },
-          "countryCode": { "type": "string", "example": "US" },
+          "countryCode": {
+            "type": "string",
+            "example": "US",
+            "description": "ISO-2 country code for the job (e.g. US, IN, GB). Used by the `country` / `countryCode` list filter."
+          },
           "remote": { "type": "boolean" },
           "hybrid": { "type": "boolean" },
           "workType": {
@@ -409,7 +434,23 @@
           "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/ScrapedJob" } },
           "total": { "type": "integer", "example": 142 },
           "page": { "type": "integer", "example": 0 },
-          "limit": { "type": "integer", "example": 20 }
+          "limit": { "type": "integer", "example": 20 },
+          "countries": {
+            "type": "array",
+            "description": "Country options for the jobs filter dropdown. Sourced from job-scrap master `country_code` items (falls back to distinct `countryCode` values on open jobs).",
+            "items": { "$ref": "#/components/schemas/CountryOption" }
+          }
+        },
+        "example": {
+          "jobs": [],
+          "total": 0,
+          "page": 0,
+          "limit": 20,
+          "countries": [
+            { "value": "US", "label": "United States (US)" },
+            { "value": "IN", "label": "India (IN)" },
+            { "value": "GB", "label": "United Kingdom (GB)" }
+          ]
         }
       },
       "JobDetailResponse": {
@@ -1435,7 +1476,7 @@
       "get": {
         "tags": ["Jobs"],
         "summary": "List jobs for a student",
-        "description": "Returns scraped open jobs matched to the student's **role** as a full phrase against `jobTitle` (e.g. \"Business Analyst\" must appear in the title; individual words are not matched separately) unless free-text `q` is provided. Excludes dropped jobs.\n\nEach job includes enriched card fields: `sourceLabel`, `salaryRange`, `postedAge`, `workType`, `visaSponsorship`, `isSponsored`, `isApplied`, `tags`, `metaLine`, plus `minExperienceYears` / `maxExperienceYears`.\n\n**UI guidance:** show `isApplied` / `isSponsored` badges on cards; do **not** display `urlDomain` (scrape source).\n\n**Experience filter:** `minExp` and/or `maxExp` (aliases `experienceMin` / `experienceMax`) keep jobs whose experience band overlaps the requested range.\n\n**Sponsored filter:** `sponsored` (alias `isSponsored`) as `true` or `false` filters by visa-sponsorship keywords in description/notes.",
+        "description": "Returns scraped open jobs matched to the student's **role** as a full phrase against `jobTitle` (e.g. \"Business Analyst\" must appear in the title; individual words are not matched separately) unless free-text `q` is provided. Excludes dropped jobs.\n\nEach job includes enriched card fields: `sourceLabel`, `salaryRange`, `postedAge`, `workType`, `visaSponsorship`, `isSponsored`, `isApplied`, `tags`, `metaLine`, plus `minExperienceYears` / `maxExperienceYears`.\n\n**UI guidance:** show `isApplied` / `isSponsored` badges on cards; do **not** display `urlDomain` (scrape source).\n\n**Experience filter:** `minExp` and/or `maxExp` (aliases `experienceMin` / `experienceMax`) keep jobs whose experience band overlaps the requested range.\n\n**Sponsored filter:** `sponsored` (alias `isSponsored`) as `true` or `false` filters by visa-sponsorship keywords in description/notes.\n\n**Country filter:** `country` (alias `countryCode`) as an ISO-2 code (e.g. `US`, `IN`) keeps jobs whose `countryCode` matches. The response includes `countries` for populating a dropdown.",
         "operationId": "listJobs",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -1522,11 +1563,37 @@
             "in": "query",
             "description": "Filter jobs scraped on or before this date (YYYY-MM-DD)",
             "schema": { "type": "string", "format": "date", "example": "2026-07-07" }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "description": "Filter jobs by ISO-2 country code (case-insensitive match on job `countryCode`). Omit or leave empty for all countries. Use a `value` from the response `countries` array. Alias: `countryCode`.",
+            "schema": { "type": "string", "example": "US" },
+            "examples": {
+              "unitedStates": {
+                "summary": "United States",
+                "value": "US"
+              },
+              "india": {
+                "summary": "India",
+                "value": "IN"
+              },
+              "unitedKingdom": {
+                "summary": "United Kingdom",
+                "value": "GB"
+              }
+            }
+          },
+          {
+            "name": "countryCode",
+            "in": "query",
+            "description": "Alias of `country`",
+            "schema": { "type": "string", "example": "IN" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Paginated job list",
+            "description": "Paginated job list. `countries` is always returned so clients can populate the country filter dropdown (independent of the selected `country`).",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/JobListResponse" }

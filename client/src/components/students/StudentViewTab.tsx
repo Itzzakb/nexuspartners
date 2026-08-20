@@ -1,6 +1,7 @@
 import {
   Download,
   FileText,
+  Globe,
   GraduationCap,
   Linkedin,
   Mail,
@@ -62,6 +63,7 @@ export function StudentViewTab({
   const details = student.details as Record<string, unknown>;
   const resume = parseStudentResume(details);
   const jobTitle = resume.jobtitle || String(details.role || '');
+  const jobSearchCountry = String(details.jobSearchCountry || '').trim().toUpperCase();
 
   const email = String(details.email || '');
   const phone = String(details.phone || details.mobile || student.phone || '');
@@ -139,6 +141,12 @@ export function StudentViewTab({
                 <span className="text-heading capitalize">{location}</span>
               </li>
             )}
+            {jobSearchCountry && (
+              <li className="flex items-start gap-2.5">
+                <Globe className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span className="text-heading">Job search: {jobSearchCountry}</span>
+              </li>
+            )}
             {linkedin && (
               <li className="flex items-start gap-2.5">
                 <Linkedin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -152,7 +160,7 @@ export function StudentViewTab({
                 </a>
               </li>
             )}
-            {!email && !phone && !location && !linkedin && (
+            {!email && !phone && !location && !linkedin && !jobSearchCountry && (
               <li className="text-body">No contact details</li>
             )}
           </ul>

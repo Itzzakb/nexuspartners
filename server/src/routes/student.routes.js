@@ -11,6 +11,7 @@ import {
   getStudentShareLink,
   getSharedStudent,
   listJobRoles,
+  listJobCountries,
 } from '../controllers/student.controller.js';
 import { authenticate, requireModule } from '../middleware/auth.js';
 
@@ -25,6 +26,7 @@ router.use(requireModule('students'));
 router.get('/', listStudents);
 router.post('/', createStudentRecord);
 router.get('/job-roles', listJobRoles);
+router.get('/job-countries', listJobCountries);
 router.get('/lookup', lookupStudentByPhone);
 router.get('/ticket/:ticketId/profile', getTicketStudentProfile);
 router.post('/ticket/:ticketId/create', createStudentFromTicket);

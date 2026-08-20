@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Mail, MapPin, Phone, Search, User } from 'lucide-react';
+import { Globe, Loader2, Mail, MapPin, Phone, Search, User } from 'lucide-react';
 import { recruiterStudentsApi } from '@/lib/recruiterApi';
 import { toast } from '@/lib/toast';
 import type { RecruiterStudent } from '@/types/recruiterPortal';
@@ -96,6 +96,12 @@ export default function RecruiterMyStudents() {
                   <p className="inline-flex items-center gap-2">
                     <MapPin className="h-4 w-4 shrink-0" />
                     {student.location}
+                  </p>
+                )}
+                {student.jobSearchCountry && (
+                  <p className="inline-flex items-center gap-2">
+                    <Globe className="h-4 w-4 shrink-0" />
+                    Jobs in {student.jobSearchCountry}
                   </p>
                 )}
               </div>

@@ -18,7 +18,7 @@ import { buildResumeFromFormData } from '../services/resumeEnrich.service.js';
 import { formatFormAddress, normalizeResumeFormData } from '../constants/resumeForm.js';
 import { getStudentActivityCounts } from '../services/recruiterPortal.service.js';
 import { buildStudentShareLink as buildStudentShareLinkUtil } from '../utils/studentShare.js';
-import { listActiveJobTitles } from '../services/jobScrapMaster.service.js';
+import { listActiveJobTitles, listActiveCountries } from '../services/jobScrapMaster.service.js';
 
 async function resolveCompany(user, companyId) {
   let targetId = user.companyId._id;
@@ -590,6 +590,17 @@ export async function listJobRoles(req, res) {
     return res.json({ jobroles });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to fetch job roles' });
+  }
+}
+
+/** Country codes from Job Scrap Master — used for student job-search country. */
+export async function listJobCountries(req, res) {
+  try {
+    const company = await resolveCompany(req.user, req.query.companyId);
+    const countries = await listActiveCountries(company._id);
+    return res.json({ countries });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch countries' });
   }
 }
 

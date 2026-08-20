@@ -30,6 +30,7 @@ export interface RecruiterStudent {
   location: string;
   city?: string;
   state?: string;
+  jobSearchCountry?: string;
   isActive: boolean;
   resumeStatus?: 'ready' | 'pending' | 'draft';
   subscriptionStatus?: string;

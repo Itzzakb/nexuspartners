@@ -22,6 +22,7 @@ import { studentApi } from '@/lib/api';
 import { downloadStudentDetailsPdf } from '@/lib/studentDetailsPdf';
 import { moveItem, newId } from '@/lib/studentResume';
 import { cn } from '@/lib/utils';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { VISA_OPTIONS } from '@/types/resumeForm';
 import type { StudentDetail } from '@/types/phase7';
 
@@ -144,6 +145,9 @@ export function StudentDetailsEditor({
   const [firstName, setFirstName] = useState(String(details.firstname || fromName.firstName || ''));
   const [lastName, setLastName] = useState(String(details.lastname || fromName.lastName || ''));
   const [role, setRole] = useState(String(details.role || ''));
+  const [jobSearchCountry, setJobSearchCountry] = useState(
+    String(details.jobSearchCountry || '').trim().toUpperCase()
+  );
   const [email, setEmail] = useState(String(details.email || ''));
   const [phone, setPhone] = useState(String(details.phone || details.mobile || student.phone || ''));
   const [linkedin, setLinkedin] = useState(String(details.linkedin || ''));
@@ -157,6 +161,9 @@ export function StudentDetailsEditor({
   const [pickerForId, setPickerForId] = useState<string | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
   const [masterRoles, setMasterRoles] = useState<string[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
+  const [countryOptions, setCountryOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [countriesLoading, setCountriesLoading] = useState(true);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
@@ -166,8 +173,17 @@ export function StudentDetailsEditor({
     return Array.from(set);
   }, [masterRoles, role]);
 
+  const countrySelectOptions = useMemo(() => {
+    const opts = [...countryOptions];
+    if (jobSearchCountry && !opts.some((c) => c.value === jobSearchCountry)) {
+      opts.unshift({ value: jobSearchCountry, label: jobSearchCountry });
+    }
+    return opts;
+  }, [countryOptions, jobSearchCountry]);
+
   useEffect(() => {
     let cancelled = false;
+    setRolesLoading(true);
     studentApi
       .jobRoles(student.companyId)
       .then((data) => {
@@ -175,6 +191,28 @@ export function StudentDetailsEditor({
       })
       .catch(() => {
         if (!cancelled) setMasterRoles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRolesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [student.companyId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCountriesLoading(true);
+    studentApi
+      .jobCountries(student.companyId)
+      .then((data) => {
+        if (!cancelled) setCountryOptions(Array.isArray(data.countries) ? data.countries : []);
+      })
+      .catch(() => {
+        if (!cancelled) setCountryOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCountriesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -187,6 +225,7 @@ export function StudentDetailsEditor({
     setFirstName(String(d.firstname || split.firstName || ''));
     setLastName(String(d.lastname || split.lastName || ''));
     setRole(String(d.role || ''));
+    setJobSearchCountry(String(d.jobSearchCountry || '').trim().toUpperCase());
     setEmail(String(d.email || ''));
     setPhone(String(d.phone || d.mobile || student.phone || ''));
     setLinkedin(String(d.linkedin || ''));
@@ -305,6 +344,7 @@ export function StudentDetailsEditor({
         email,
         phone,
         role,
+        jobSearchCountry,
         city,
         state,
         linkedin,
@@ -330,6 +370,7 @@ export function StudentDetailsEditor({
         firstName,
         lastName,
         role,
+        jobSearchCountry,
         email,
         phone,
         linkedin,
@@ -386,14 +427,33 @@ export function StudentDetailsEditor({
             <Field label="Last Name" value={lastName} onChange={setLastName} />
             <label className="block text-sm">
               <span className="mb-1.5 block font-medium text-heading">Role / Job Title</span>
-              <select className="np-input" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="">Select role</option>
-                {roleOptions.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={roleOptions.map((r) => ({ value: r, label: r }))}
+                value={role}
+                onChange={setRole}
+                placeholder="Select role"
+                emptyLabel="Select role"
+                searchPlaceholder="Search roles…"
+                allowClear
+                allowCreate
+                createHint="Use this role"
+                loading={rolesLoading}
+                loadingMessage="Loading roles…"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-heading">Job search country</span>
+              <SearchableSelect
+                options={countrySelectOptions}
+                value={jobSearchCountry}
+                onChange={(next) => setJobSearchCountry(next.trim().toUpperCase())}
+                placeholder="Select country"
+                emptyLabel="Select country"
+                searchPlaceholder="Search countries…"
+                allowClear
+                loading={countriesLoading}
+                loadingMessage="Loading countries…"
+              />
             </label>
           </div>
         </section>

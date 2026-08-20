@@ -16,6 +16,9 @@ import type {
 import type {
   EmployeeSalary,
   EmployeeLeave,
+  SalaryEmployee,
+  SalaryDashboardRow,
+  SalaryDashboardStats,
   BillingRecord,
   BillingSummary,
   BillingLine,
@@ -598,16 +601,67 @@ export const salaryApi = {
       method: 'POST',
       body: JSON.stringify({ password }),
     }),
+  listEmployees: (companyId?: string) =>
+    api<{ employees: SalaryEmployee[] }>(
+      `/salaries/employees${companyId ? `?companyId=${companyId}` : ''}`
+    ),
+  dashboard: (params: { year: number; month: number; companyId?: string }) => {
+    const qs = new URLSearchParams({
+      year: String(params.year),
+      month: String(params.month),
+    });
+    if (params.companyId) qs.set('companyId', params.companyId);
+    return api<{
+      year: number;
+      month: number;
+      currency: string;
+      stats: SalaryDashboardStats;
+      rows: SalaryDashboardRow[];
+    }>(`/salaries/dashboard?${qs.toString()}`);
+  },
+  getMonthlyLeave: (params: {
+    employeeKey: string;
+    year: number;
+    month: number;
+    companyId?: string;
+  }) => {
+    const qs = new URLSearchParams({
+      employeeKey: params.employeeKey,
+      year: String(params.year),
+      month: String(params.month),
+    });
+    if (params.companyId) qs.set('companyId', params.companyId);
+    return api<{ monthlyLeave: { id?: string; leaveDates: string[]; actualSalary: number | null } }>(
+      `/salaries/monthly-leaves?${qs.toString()}`
+    );
+  },
+  saveMonthlyLeave: (payload: {
+    employeeKey: string;
+    year: number;
+    month: number;
+    leaveDates: string[];
+    actualSalary?: number | null;
+    companyId?: string;
+  }) =>
+    api<{ monthlyLeave: { id: string; leaveDates: string[]; actualSalary: number | null } }>(
+      '/salaries/monthly-leaves',
+      { method: 'PUT', body: JSON.stringify(payload) }
+    ),
   list: (params: Record<string, string> = {}) => {
     const qs = new URLSearchParams(params).toString();
     return api<{ salaries: EmployeeSalary[] }>(`/salaries${qs ? `?${qs}` : ''}`);
   },
   upsert: (payload: {
-    userId: string;
+    employeeKey?: string;
+    userId?: string;
+    employeeType?: 'user' | 'recruiter';
+    recruiterId?: string;
     monthlySalary: number;
     currency?: string;
     effectiveFrom?: string;
+    allowedLeaves?: number;
     notes?: string;
+    status?: 'active' | 'discontinued';
     companyId?: string;
     password: string;
   }) =>
@@ -624,7 +678,18 @@ export const salaryApi = {
     const qs = new URLSearchParams(params).toString();
     return api<{ leaves: EmployeeLeave[] }>(`/salaries/leaves${qs ? `?${qs}` : ''}`);
   },
-  createLeave: (payload: Partial<EmployeeLeave> & { userId: string; startDate: string; endDate: string }) =>
+  createLeave: (payload: {
+    employeeKey?: string;
+    userId?: string;
+    employeeType?: 'user' | 'recruiter';
+    recruiterId?: string;
+    startDate: string;
+    endDate: string;
+    leaveType?: string;
+    days?: number;
+    reason?: string;
+    companyId?: string;
+  }) =>
     api<{ leave: EmployeeLeave }>('/salaries/leaves', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -823,6 +888,7 @@ export const studentApi = {
       role?: string;
       city?: string;
       state?: string;
+      jobSearchCountry?: string;
       linkedin?: string;
       visa?: string;
       status?: string;
@@ -845,6 +911,10 @@ export const studentApi = {
   jobRoles: (companyId?: string) =>
     api<{ jobroles: string[] }>(
       `/students/job-roles${companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''}`
+    ),
+  jobCountries: (companyId?: string) =>
+    api<{ countries: Array<{ value: string; label: string }> }>(
+      `/students/job-countries${companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''}`
     ),
 };
 

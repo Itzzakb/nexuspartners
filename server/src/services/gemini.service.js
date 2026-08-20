@@ -1,4 +1,5 @@
 import { atsTemplateFixResumeInstructions } from '../constants/atsResumeTemplate.js';
+import { parseJsonFromLlmText, stripLlmCodeFences } from '../utils/llmJson.js';
 
 const NEXUS_RESUME_PARSE_URL =
   process.env.NEXUS_RESUME_PARSE_URL ||
@@ -62,57 +63,91 @@ async function parseWithNexusResumeApi(text) {
   return parsed;
 }
 
-async function generateJsonWithGemini(promptText, { temperature = 0.2, maxOutputTokens = 8192 } = {}) {
+async function generateJsonWithGemini(promptText, { temperature = 0.2, maxOutputTokens = 8192, retries = 1 } = {}) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) throw new Error('Gemini API key not configured');
 
-  // Google AI Studio / Generative Language API: API key auth only.
-  // Use x-goog-api-key header (preferred). Do NOT send Authorization: Bearer —
-  // that endpoint rejects OAuth-style credentials with ACCESS_TOKEN_TYPE_UNSUPPORTED.
   const model = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: promptText }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature,
-        maxOutputTokens,
-      },
-    }),
-  });
+  let lastParseError;
+  const attempts = Math.max(1, Number(retries) + 1);
 
-  if (!res.ok) {
-    const errText = await res.text();
-    if (
-      res.status === 401 ||
-      errText.includes('UNAUTHENTICATED') ||
-      errText.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED')
-    ) {
-      throw new Error(
-        'Gemini authentication failed. Check GEMINI_API_KEY in server/.env (from https://aistudio.google.com/apikey), then restart the server.'
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const attemptPrompt =
+      attempt === 0
+        ? promptText
+        : `${promptText}
+
+Your previous response was invalid JSON. Return ONLY one valid JSON object. Escape double quotes inside strings with \\". Do not truncate. No markdown.`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: attemptPrompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: attempt === 0 ? temperature : Math.min(temperature, 0.2),
+          maxOutputTokens,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      if (
+        res.status === 401 ||
+        errText.includes('UNAUTHENTICATED') ||
+        errText.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED')
+      ) {
+        throw new Error(
+          'Gemini authentication failed. Check GEMINI_API_KEY in server/.env (from https://aistudio.google.com/apikey), then restart the server.'
+        );
+      }
+      if (res.status === 429 || errText.includes('RESOURCE_EXHAUSTED')) {
+        throw new Error(
+          `Gemini quota exceeded for model "${model}". In AI Studio, check Rate limits — if that model shows 0/0, set GEMINI_MODEL=gemini-3.1-flash-lite in server/.env and restart.`
+        );
+      }
+      throw new Error(`Gemini API failed: ${errText}`);
+    }
+
+    const data = await res.json();
+    const candidate = data?.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+    const raw = candidate?.content?.parts?.[0]?.text;
+    if (!raw) throw new Error('Empty Gemini response');
+
+    if (finishReason === 'MAX_TOKENS') {
+      lastParseError = new Error(
+        'Gemini response was truncated (max tokens). Try a shorter base resume or reduce experience bullets.'
       );
     }
-    if (res.status === 429 || errText.includes('RESOURCE_EXHAUSTED')) {
-      throw new Error(
-        `Gemini quota exceeded for model "${model}". In AI Studio, check Rate limits — if that model shows 0/0, set GEMINI_MODEL=gemini-3.1-flash-lite in server/.env and restart.`
-      );
+
+    try {
+      return parseJsonFromLlmText(raw);
+    } catch (err) {
+      lastParseError = err;
+      if (process.env.NODE_ENV !== 'production') {
+        const preview = stripLlmCodeFences(raw);
+        console.warn(
+          `[gemini] JSON parse failed (attempt ${attempt + 1}/${attempts}) at`,
+          err.message,
+          'preview:',
+          preview.slice(0, 240),
+          '...',
+          preview.slice(-240)
+        );
+      }
     }
-    throw new Error(`Gemini API failed: ${errText}`);
   }
 
-  const data = await res.json();
-  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!raw) throw new Error('Empty Gemini response');
-
-  const cleaned = raw.replace(/```json\n?|\n?```/g, '').trim();
-  return JSON.parse(cleaned);
+  const detail = lastParseError?.message || 'Unknown parse error';
+  throw new Error(`Failed to parse AI resume JSON: ${detail}`);
 }
 
 async function parseWithGemini(text) {
@@ -407,6 +442,7 @@ IMPORTANT:
   const generated = await generateJsonWithGemini(prompt, {
     temperature: isRefix || improvementList.length ? 0.45 : 0.35,
     maxOutputTokens: 16384,
+    retries: 2,
   });
   const resume = normalizeTailoredResume(structureBase || resumeData, generated);
   return { resume, source: 'gemini' };
