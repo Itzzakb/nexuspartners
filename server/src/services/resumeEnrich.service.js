@@ -4,9 +4,16 @@
 
 import { formatFormAddress, normalizeResumeFormData, formatEducationDateRange } from '../constants/resumeForm.js';
 
+function isJunkBulletText(text) {
+  const s = String(text ?? '').trim();
+  if (!s) return true;
+  return /^(true|false|null|undefined|nan)$/i.test(s);
+}
+
 function clean(value) {
+  if (typeof value === 'boolean') return '';
   const s = String(value ?? '').trim();
-  if (!s || s.toUpperCase() === 'UNKNOWN') return '';
+  if (!s || s.toUpperCase() === 'UNKNOWN' || isJunkBulletText(s)) return '';
   return s;
 }
 
@@ -54,10 +61,11 @@ function normalizePoints(raw) {
         return expandPointText(p).map((line) => pointFromText(line));
       }
       if (p && typeof p === 'object') {
-        return expandPointText(p.point || p.text || p.description || p.value).map((line) =>
-          pointFromText(line)
-        );
+        const raw = p.point ?? p.text ?? p.description ?? p.value;
+        if (typeof raw === 'boolean') return [];
+        return expandPointText(raw).map((line) => pointFromText(line));
       }
+      if (typeof p === 'boolean') return [];
       return [];
     })
     .filter(Boolean);

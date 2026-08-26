@@ -273,8 +273,222 @@ export function mergeSkillsPreservingBase(baseSkills = [], fixedSkills = []) {
   return result;
 }
 
+const SLUG_SKILL_LABELS = {
+  'power-bi': 'Power BI',
+  snowflake: 'Snowflake',
+  cortex: 'Snowflake Cortex',
+  servicenow: 'ServiceNow',
+  github: 'GitHub',
+  'github-copilot': 'GitHub Copilot',
+  python: 'Python',
+  dbt: 'dbt',
+  'microsoft-azure': 'Microsoft Azure',
+  'azure-data-factory': 'Azure Data Factory',
+  kubernetes: 'Kubernetes',
+  k8s: 'Kubernetes',
+  docker: 'Docker',
+  workday: 'Workday',
+  prefect: 'Prefect',
+};
+
+/** Tools often named in JD body (including “plus”) but missing from skill tags. */
+const JD_BODY_SKILL_PATTERNS = [
+  { label: 'Prefect', re: /\bprefect\b/i },
+  { label: 'Kubernetes', re: /\bkubernetes\b|\bk8s\b/i },
+  { label: 'Docker', re: /\bdocker\b/i },
+  { label: 'Workday', re: /\bworkday\b/i },
+  { label: 'GitHub Copilot', re: /\bgithub\s*copilot\b/i },
+  { label: 'Azure Data Factory', re: /\bazure\s*data\s*factory\b|\badf\b/i },
+  { label: 'Snowflake Cortex', re: /\bcortex\b/i },
+  { label: 'ServiceNow', re: /\bservicenow\b/i },
+  { label: 'Power BI', re: /\bpower\s*bi\b/i },
+  { label: 'dbt', re: /\bdbt\b/i },
+];
+
+const SKILL_TOKEN_ALIASES = {
+  microsoftazure: ['azure'],
+  snowflakecortex: ['cortex'],
+  githubcopilot: ['copilot'],
+  azuredatafactory: ['adf', 'datafactory'],
+  kubernetes: ['k8s'],
+  k8s: ['kubernetes'],
+  powerbi: ['pbi'],
+};
+
+function labelFromTechnologySlug(slug) {
+  const key = String(slug || '')
+    .trim()
+    .toLowerCase();
+  if (!key) return '';
+  if (SLUG_SKILL_LABELS[key]) return SLUG_SKILL_LABELS[key];
+  return key
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (part === 'dbt') return 'dbt';
+      if (part === 'github') return 'GitHub';
+      if (part === 'bi') return 'BI';
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(' ');
+}
+
+function skillAlreadyCovered(token, globalTokens) {
+  if (!token) return true;
+  const aliases = [token, ...(SKILL_TOKEN_ALIASES[token] || [])];
+  for (const alias of aliases) {
+    if (globalTokens.has(alias)) return true;
+    if (alias.length < 4) continue;
+    for (const existing of globalTokens) {
+      // Existing "Azure Data Factory" already covers adding "Azure".
+      // Do NOT treat existing "GitHub" as covering "GitHub Copilot".
+      if (existing.length >= alias.length && existing.includes(alias)) return true;
+    }
+  }
+  return false;
+}
+
+function suggestSkillCategory(label, rows = []) {
+  const token = normalizeSkillToken(label);
+  const rules = [
+    {
+      tokens: ['kubernetes', 'k8s', 'docker'],
+      titleRe: /devops|container|cloud|platform|infrastructure|orchestration/i,
+      fallback: 'DevOps & Containers',
+    },
+    {
+      tokens: ['prefect', 'airflow', 'dbt', 'azuredatafactory', 'adf'],
+      titleRe: /etl|pipeline|orchestration|transformation|data engineer/i,
+      fallback: 'ETL Tools',
+    },
+    {
+      tokens: ['snowflake', 'snowflakecortex', 'cortex'],
+      titleRe: /warehouse|database|cloud|platform|data platform/i,
+      fallback: 'Cloud Platforms',
+    },
+    {
+      tokens: ['githubcopilot', 'github', 'git', 'copilot'],
+      titleRe: /version|git|control|devops/i,
+      fallback: 'Version Control',
+    },
+    {
+      tokens: ['workday', 'servicenow', 'salesforce'],
+      titleRe: /enterprise|application|saas|business system/i,
+      fallback: 'Enterprise Applications',
+    },
+    {
+      tokens: ['powerbi', 'tableau'],
+      titleRe: /visual|bi|dashboard|reporting/i,
+      fallback: 'Visualization Tools',
+    },
+  ];
+  const rule = rules.find((r) => r.tokens.includes(token));
+  if (rule) {
+    const match = (Array.isArray(rows) ? rows : []).find((row) =>
+      rule.titleRe.test(String(row?.skill_title || ''))
+    );
+    if (match?.skill_title) return match.skill_title;
+    return rule.fallback;
+  }
+  const additional = (Array.isArray(rows) ? rows : []).find((row) =>
+    /additional/i.test(String(row?.skill_title || ''))
+  );
+  return additional?.skill_title || 'Additional Skills';
+}
+
+export function extractRequiredJobSkills({ jobDescription = '', technologySlugs = [] } = {}) {
+  const labels = [];
+  const seen = new Set();
+  const add = (label) => {
+    const text = String(label || '').trim();
+    const token = normalizeSkillToken(text);
+    if (!text || !token || seen.has(token)) return;
+    seen.add(token);
+    labels.push(text);
+  };
+
+  for (const slug of Array.isArray(technologySlugs) ? technologySlugs : []) {
+    add(labelFromTechnologySlug(slug));
+  }
+
+  const text = String(jobDescription || '');
+  for (const { label, re } of JD_BODY_SKILL_PATTERNS) {
+    if (re.test(text)) add(label);
+  }
+  for (const [slug, label] of Object.entries(SLUG_SKILL_LABELS)) {
+    if (new RegExp(`\\b${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)) {
+      add(label);
+    }
+  }
+  return labels;
+}
+
+export function injectMissingJobSkills(baseSkills = [], requiredLabels = []) {
+  const globalTokens = new Set();
+  (Array.isArray(baseSkills) ? baseSkills : []).forEach((row) => {
+    splitSkillList(row?.skills).forEach((skill) => {
+      const token = normalizeSkillToken(skill);
+      if (token) globalTokens.add(token);
+    });
+  });
+
+  const extraRows = [];
+  for (const label of requiredLabels) {
+    const token = normalizeSkillToken(label);
+    if (skillAlreadyCovered(token, globalTokens)) continue;
+    extraRows.push({
+      skill_title: suggestSkillCategory(label, baseSkills),
+      skills: label,
+    });
+    globalTokens.add(token);
+  }
+  if (!extraRows.length) return Array.isArray(baseSkills) ? baseSkills : [];
+  return mergeSkillsPreservingBase(baseSkills, extraRows);
+}
+
+function isJunkBulletText(text) {
+  const value = String(text || '').trim();
+  if (!value) return true;
+  return /^(true|false|null|undefined|nan)$/i.test(value);
+}
+
 function pointText(p) {
-  return String(p?.point || p?.text || '').trim();
+  if (p == null || typeof p === 'boolean') return '';
+  const raw = typeof p === 'object' ? p.point ?? p.text ?? '' : p;
+  if (typeof raw === 'boolean' || raw == null) return '';
+  if (typeof raw !== 'string' && typeof raw !== 'number') return '';
+  const text = String(raw).trim();
+  return isJunkBulletText(text) ? '' : text;
+}
+
+function sanitizeResumeBullets(resume) {
+  const next = resume && typeof resume === 'object' ? resume : {};
+  if (Array.isArray(next.professionalsummary_points)) {
+    next.professionalsummary_points = next.professionalsummary_points
+      .filter((p) => pointText(p))
+      .map((p) => ({ ...p, point: pointText(p), form: p?.form !== false }));
+  }
+  if (Array.isArray(next.experience)) {
+    next.experience = next.experience.map((role) => ({
+      ...role,
+      points: Array.isArray(role?.points)
+        ? role.points
+            .filter((p) => pointText(p))
+            .map((p) => ({ ...p, point: pointText(p), form: p?.form !== false }))
+        : [],
+    }));
+  }
+  return next;
+}
+
+export function applyDeterministicTailorFixes(resume, jobContext = {}) {
+  const next = sanitizeResumeBullets(resume && typeof resume === 'object' ? resume : {});
+  const required = extractRequiredJobSkills({
+    jobDescription: jobContext.jobDescription || '',
+    technologySlugs: jobContext.technologySlugs || jobContext.technology_slugs || [],
+  });
+  next.techinicalskills = injectMissingJobSkills(next.techinicalskills || [], required);
+  return next;
 }
 
 /**
@@ -380,7 +594,16 @@ export async function fixResumeForJob(resumeData, jobContext, instructions = '')
     previousAtsScore = null,
     isRefix = false,
     structureBase = null,
+    technologySlugs = [],
   } = jobContext;
+
+  const requiredSkillLabels = extractRequiredJobSkills({
+    jobDescription,
+    technologySlugs,
+  });
+  const requiredSkillsBlock = requiredSkillLabels.length
+    ? `\nREQUIRED SKILLS — every item below MUST appear in techinicalskills (append missing ones; keep existing skills). Adding them as skill keywords is required for ATS even if the base resume does not claim production experience with every tool:\n${requiredSkillLabels.map((s) => `- ${s}`).join('\n')}\n`
+    : '';
 
   const adminNotes = String(instructions || '').trim();
   const looksLikeOldPreserveOnly =
@@ -411,6 +634,7 @@ export async function fixResumeForJob(resumeData, jobContext, instructions = '')
 ${improvementBlock}
 ${refixBlock}
 ${atsTemplateFixResumeInstructions()}
+${requiredSkillsBlock}
 
 Job title: ${jobTitle}
 Company: ${companyName}
@@ -425,13 +649,17 @@ IMPORTANT:
 - Do NOT change the "jobtitle" field.
 - Rewrite professionalsummary_points for the job (keep a similar bullet count).
 - Keep every experience role (company/title/dates); rewrite responsibility points as needed for the JD${improvementList.length ? ' and the listed improvements' : ''}.
+- Every experience/summary "point" must be a real sentence. Never output boolean true/false, or the words "true"/"false", as a bullet.
 - Keep education and certifications from the source resume.
-- Keep existing techinicalskills and ADD missing JD skills${improvementList.length ? ' plus any skills implied by the improvements' : ''}.`;
+- Keep existing techinicalskills and ADD every missing required skill listed above${improvementList.length ? ' plus any skills implied by the improvements' : ''}.`;
 
   if (!isGeminiConfigured()) {
     if (process.env.NODE_ENV !== 'production') {
       return {
-        resume: normalizeTailoredResume(structureBase || resumeData, resumeData),
+        resume: applyDeterministicTailorFixes(
+          normalizeTailoredResume(structureBase || resumeData, resumeData),
+          { jobDescription, technologySlugs }
+        ),
         source: 'mock',
         mock: true,
       };
@@ -444,7 +672,10 @@ IMPORTANT:
     maxOutputTokens: 16384,
     retries: 2,
   });
-  const resume = normalizeTailoredResume(structureBase || resumeData, generated);
+  const resume = applyDeterministicTailorFixes(
+    normalizeTailoredResume(structureBase || resumeData, generated),
+    { jobDescription, technologySlugs }
+  );
   return { resume, source: 'gemini' };
 }
 

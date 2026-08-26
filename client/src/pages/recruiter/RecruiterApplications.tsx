@@ -29,6 +29,17 @@ function formatDate(value: string | null) {
   });
 }
 
+function formatJobExperience(job: RecruiterScrapedJob) {
+  const min = job.minExperienceYears;
+  const max = job.maxExperienceYears;
+  if (min == null && max == null) return null;
+  if (min != null && max != null) {
+    return min === max ? `${min} yrs` : `${min}–${max} yrs`;
+  }
+  if (min != null) return `${min}+ yrs`;
+  return `Up to ${max} yrs`;
+}
+
 function JobCard({
   job,
   studentPhone,
@@ -38,18 +49,24 @@ function JobCard({
 }) {
   const isApplied = job.isApplied ?? job.studentAction?.status === 'applied';
   const isSponsored = job.isSponsored ?? job.visaSponsorship;
+  const experienceLabel = formatJobExperience(job);
+  const description = String(job.description || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   return (
     <Link
       to={`/recruiter-portal/jobs/${job.id}?studentPhone=${encodeURIComponent(studentPhone)}`}
-      className="block rounded-xl border border-border bg-white p-4 transition-shadow hover:shadow-md"
+      className="block min-w-0 overflow-hidden rounded-xl border border-border bg-white p-4 transition-shadow hover:shadow-md"
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-heading">{job.jobTitle}</h3>
-          <p className="mt-0.5 text-sm text-body">{job.companyName}</p>
+          <h3 className="break-words font-semibold text-heading">{job.jobTitle}</h3>
+          <p className="mt-0.5 truncate text-sm text-body">{job.companyName}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           {isSponsored && (
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
               Sponsored
@@ -63,20 +80,21 @@ function JobCard({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-body">
+      <div className="mt-3 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-body">
         {job.location && (
-          <span className="inline-flex items-center gap-1">
-            <MapPin className="h-3.5 w-3.5" />
-            {job.location}
+          <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 break-words">{job.location}</span>
           </span>
         )}
-        {job.countryCode && <span>{job.countryCode}</span>}
-        {job.datePosted && <span>Posted {formatDate(job.datePosted)}</span>}
-        {job.remote && <span className="text-primary">Remote</span>}
+        {job.countryCode && <span className="shrink-0">{job.countryCode}</span>}
+        {experienceLabel && <span className="shrink-0">{experienceLabel}</span>}
+        {job.datePosted && <span className="shrink-0">Posted {formatDate(job.datePosted)}</span>}
+        {job.remote && <span className="shrink-0 text-primary">Remote</span>}
       </div>
 
-      {job.description && (
-        <p className="mt-3 line-clamp-2 text-sm text-body">{job.description}</p>
+      {description && (
+        <p className="mt-3 line-clamp-2 break-words text-sm text-body">{description}</p>
       )}
     </Link>
   );
@@ -194,8 +212,16 @@ export default function RecruiterApplications() {
   const selectedStudent = students.find((s) => s.phone === selectedPhone);
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
+  const goToPage = (nextPage: number) => {
+    const clamped = Math.min(Math.max(nextPage, 0), Math.max(totalPages - 1, 0));
+    if (clamped === page) return;
+    showFullLoaderRef.current = true;
+    setPage(clamped);
+    document.getElementById('recruiter-portal-main')?.scrollTo({ top: 0, behavior: 'auto' });
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div>
         <h1 className="text-2xl font-semibold text-heading">Applications</h1>
         <p className="mt-1 text-sm text-body">
@@ -203,7 +229,7 @@ export default function RecruiterApplications() {
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
         <aside className="np-card flex flex-col overflow-hidden p-0">
           <div className="border-b border-border p-3">
             <div className="relative">
@@ -261,7 +287,7 @@ export default function RecruiterApplications() {
           </div>
         </aside>
 
-        <section className="space-y-4">
+        <section className="min-w-0 space-y-4">
           {selectedStudent && (
             <div className="np-card p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -292,7 +318,7 @@ export default function RecruiterApplications() {
           )}
 
           <div className="np-card p-4">
-            <div className="flex flex-wrap items-end gap-4">
+            <div className="flex min-w-0 flex-wrap items-end gap-4">
               <div className="relative min-w-[200px] flex-1">
                 <label className="mb-1 block text-xs font-medium text-body">Search</label>
                 <div className="relative">
@@ -382,8 +408,9 @@ export default function RecruiterApplications() {
           </div>
 
           {loadingJobs ? (
-            <div className="flex justify-center py-16">
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-body">Loading jobs…</p>
             </div>
           ) : !selectedPhone ? (
             <div className="np-card flex flex-col items-center justify-center py-16 text-center">
@@ -397,13 +424,13 @@ export default function RecruiterApplications() {
             </div>
           ) : (
             <>
-              <div className="space-y-3">
+              <div className="min-w-0 space-y-3">
                 {jobs.map((job) => (
                   <JobCard key={job.id} job={job} studentPhone={selectedPhone} />
                 ))}
               </div>
 
-              <div className="flex items-center justify-between np-card px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 np-card px-4 py-3">
                 <p className="text-sm text-body">
                   {total} job{total !== 1 ? 's' : ''} · Page {page + 1} of {totalPages}
                 </p>
@@ -411,16 +438,16 @@ export default function RecruiterApplications() {
                   <button
                     type="button"
                     className="np-btn-secondary !py-2"
-                    disabled={page === 0}
-                    onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                    disabled={page === 0 || loadingJobs || filteringJobs}
+                    onClick={() => goToPage(page - 1)}
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
                     className="np-btn-secondary !py-2"
-                    disabled={page + 1 >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
+                    disabled={page + 1 >= totalPages || loadingJobs || filteringJobs}
+                    onClick={() => goToPage(page + 1)}
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>

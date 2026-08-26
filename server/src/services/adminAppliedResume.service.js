@@ -1,8 +1,11 @@
 import RecruiterResumeLibrary from '../models/RecruiterResumeLibrary.js';
 import StudentJobAction from '../models/StudentJobAction.js';
 import ScrapedJob from '../models/ScrapedJob.js';
+import mongoose from 'mongoose';
 import { buildResumeDownload } from './nexusStudentApi.service.js';
 import { resumeLibraryToJSON } from './recruiterPortal.service.js';
+import { tokenFromDownloadUrl } from '../utils/resumeDownloadToken.js';
+import { packetDownloadFilename } from './resumeDocx.service.js';
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -149,49 +152,83 @@ export async function downloadAppliedResumeById({
   resumeId,
   publicBaseUrl,
 }) {
-  const item = await RecruiterResumeLibrary.findOne({
-    _id: resumeId,
-    companyId,
-  });
+  let item = mongoose.isValidObjectId(resumeId)
+    ? await RecruiterResumeLibrary.findOne({
+        _id: resumeId,
+        companyId,
+      })
+    : null;
+  let action = null;
+
   if (!item) {
-    const err = new Error('Resume not found');
-    err.status = 404;
-    throw err;
+    action = mongoose.isValidObjectId(resumeId)
+      ? await StudentJobAction.findOne({ _id: resumeId, companyId })
+      : null;
+    if (!action) {
+      const err = new Error('Resume not found');
+      err.status = 404;
+      throw err;
+    }
+
+    item = await RecruiterResumeLibrary.findOne({
+      companyId,
+      studentPhone: action.studentPhone,
+      scrapedJobId: action.scrapedJobId || null,
+      recruiterUsername: action.recruiterUsername || '',
+    });
   }
 
-  if (item.downloadUrl) {
-    return {
-      downloadUrl: item.downloadUrl,
-      filename: '',
-      resume: resumeLibraryToJSON(item),
-    };
+  const existingUrl = item?.downloadUrl || action?.atsResumeUrl || '';
+  const existingToken = tokenFromDownloadUrl(existingUrl);
+
+  const studentPhone = item?.studentPhone || action?.studentPhone || '';
+  let jobTitle = item?.jobTitle || '';
+  let companyName = item?.companyName || '';
+  let jobDescription = '';
+  let jobNumericId = '';
+  const scrapedJobId =
+    item?.scrapedJobId?.toString?.() || action?.scrapedJobId?.toString?.() || '';
+  const resumeData = item?.resumeData && typeof item.resumeData === 'object' ? item.resumeData : null;
+
+  if (scrapedJobId) {
+    const job = await ScrapedJob.findById(scrapedJobId)
+      .select('jobTitle companyName description theirstackJobId')
+      .lean();
+    if (job) {
+      jobTitle = jobTitle || job.jobTitle || '';
+      companyName = companyName || job.companyName || '';
+      jobDescription = job.description || '';
+      jobNumericId = job.theirstackJobId != null ? String(job.theirstackJobId) : '';
+    }
   }
 
-  if (!item.resumeData) {
+  if (!studentPhone) {
     const err = new Error('No resume file available for this application yet');
     err.status = 404;
     throw err;
   }
 
-  const result = await buildResumeDownload(item.studentPhone, {
+  const result = await buildResumeDownload(studentPhone, {
     companyId,
     publicBaseUrl,
-    jobtitle: item.jobTitle,
-    companyname: item.companyName,
-    scrapedJobId: item.scrapedJobId?.toString?.() || undefined,
-    resume: item.resumeData,
+    packet: true,
+    filename: packetDownloadFilename(jobTitle, jobNumericId),
+    jobtitle: jobTitle,
+    companyname: companyName,
+    jobdescription: jobDescription,
+    scrapedJobId: scrapedJobId || undefined,
+    resume: resumeData || undefined,
   });
 
-  const downloadUrl = result?.downloadUrl || '';
-  if (downloadUrl) {
-    item.downloadUrl = downloadUrl;
+  if (item && existingToken && !item.downloadToken) {
+    item.downloadToken = existingToken;
     await item.save();
   }
 
   return {
-    downloadUrl,
-    filename: result?.filename || '',
-    resume: resumeLibraryToJSON(item),
+    downloadUrl: result?.downloadUrl || existingUrl,
+    filename: result?.filename || packetDownloadFilename(jobTitle, jobNumericId),
+    resume: item ? resumeLibraryToJSON(item) : undefined,
   };
 }
 

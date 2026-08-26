@@ -68,7 +68,8 @@ FIX RESUME / TAILOR RULES (match competitor-style tailored resumes):
 
 - PROFESSIONAL SUMMARY: Rewrite EVERY professionalsummary_points bullet for the target job (JD keywords, tighter wording). Keep a similar bullet count to the base (do not collapse a rich summary down to only 3). Prefer about ${t.summaryBullets} strong bullets when the base is very long.
 
-- TECHNICAL SKILLS: Keep ALL existing techinicalskills categories and skills from the base. ADD any tools/technologies required by the JD that are missing (append to a matching skill_title, or add a new category).
+- TECHNICAL SKILLS: Keep ALL existing techinicalskills categories and skills from the base. ADD every missing JD tool/technology, including required-skill tags and tools named as a plus in the JD body (append to a matching skill_title, or add a new category). Keyword presence in skills is required for ATS.
+- EXPERIENCE BULLETS: Every point.point must be a complete sentence. Never emit boolean true/false or the words "true"/"false" as a bullet.
 
 - PROFESSIONAL EXPERIENCE: Keep ALL employers, job titles, locations, and dates from the base. Rewrite responsibility bullets for the JD and compress to about half of the base bullet count per role (newest roles can keep more). Target about ${t.experienceBulletsByRole.join(' / ')} bullets for the first roles when the base is long; older roles keep at least ${t.minExtraRoleBullets}. Do not drop entire roles.
 

@@ -12,13 +12,20 @@ import {
   resolveApiCompanyName,
   buildResumeDownload,
   normalizePhone,
+  toExternalStudentShape,
 } from './nexusStudentApi.service.js';
 import { scrapedJobToJSON, extractExperienceYears } from './jobScrap.service.js';
 import { listActiveCountries } from './jobScrapMaster.service.js';
-import { fixResumeForJob, scoreResumeAtsWithGemini, ATS_TARGET_SCORE } from './gemini.service.js';
+import {
+  fixResumeForJob,
+  scoreResumeAtsWithGemini,
+  ATS_TARGET_SCORE,
+  applyDeterministicTailorFixes,
+} from './gemini.service.js';
 import { getPromptByKey } from '../controllers/prompt.controller.js';
 import RecruiterResumeLibrary from '../models/RecruiterResumeLibrary.js';
 import Interview from '../models/Interview.js';
+import { tokenFromDownloadUrl } from '../utils/resumeDownloadToken.js';
 import {
   APPLICATION_STATUS_LABELS,
   APPLICATION_TRACKER_STATUSES,
@@ -383,28 +390,8 @@ export async function findJobsForStudent({
   const filterMin = parseExperienceFilter(minExp);
   const filterMax = parseExperienceFilter(maxExp);
   if (filterMin != null || filterMax != null) {
-    await backfillMissingExperienceYears(companyId);
-    // Overlap between job experience band and requested [minExp, maxExp].
-    // Jobs with unknown experience are excluded when this filter is used.
-    andClauses.push({
-      $or: [{ minExperienceYears: { $ne: null } }, { maxExperienceYears: { $ne: null } }],
-    });
-    if (filterMin != null) {
-      andClauses.push({
-        $or: [
-          { maxExperienceYears: { $gte: filterMin } },
-          { maxExperienceYears: null, minExperienceYears: { $gte: filterMin } },
-        ],
-      });
-    }
-    if (filterMax != null) {
-      andClauses.push({
-        $or: [
-          { minExperienceYears: { $lte: filterMax } },
-          { minExperienceYears: null, maxExperienceYears: { $lte: filterMax } },
-        ],
-      });
-    }
+    scheduleExperienceBackfill(companyId);
+    andClauses.push(...experienceFilterClauses(filterMin, filterMax));
   }
 
   if (sponsored === true || sponsored === 'true') {
@@ -450,6 +437,8 @@ export async function findJobsForStudent({
 
   const [items, total, countries] = await Promise.all([
     ScrapedJob.find(filter)
+      .select('-raw')
+      .lean()
       .sort({ datePosted: -1, createdAt: -1 })
       .skip(page * limit)
       .limit(limit),
@@ -474,7 +463,7 @@ export async function findJobsForStudent({
 }
 
 async function listJobCountryOptions(companyId) {
-  const master = await listActiveCountries(companyId);
+  const master = await listActiveCountries(companyId, { seed: false });
   if (master.length) return master;
 
   const codes = await ScrapedJob.distinct('countryCode', {
@@ -494,7 +483,65 @@ function parseExperienceFilter(value) {
   return Math.min(50, Math.round(n));
 }
 
-/** Fill min/max experience on open jobs that are still missing both fields. */
+/**
+ * Point filter (minExp === maxExp, e.g. 4-4): jobs a candidate with that many
+ * years can qualify for (job.min ≤ Y ≤ job.max). Drops 5+ and 6-16 for Y=4.
+ * Range filter (4-5): job band must sit fully inside the selected years.
+ */
+function experienceFilterClauses(filterMin, filterMax) {
+  if (filterMin != null && filterMax != null && filterMin === filterMax) {
+    const years = filterMin;
+    return [
+      {
+        $or: [
+          { minExperienceYears: { $type: 'number' } },
+          { maxExperienceYears: { $type: 'number' } },
+        ],
+      },
+      {
+        $or: [
+          { minExperienceYears: { $lte: years, $type: 'number' } },
+          { minExperienceYears: null },
+          { minExperienceYears: { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { maxExperienceYears: { $gte: years, $type: 'number' } },
+          { maxExperienceYears: null },
+          { maxExperienceYears: { $exists: false } },
+        ],
+      },
+    ];
+  }
+
+  const clauses = [];
+  if (filterMin != null) {
+    clauses.push({ minExperienceYears: { $gte: filterMin, $type: 'number' } });
+  }
+  if (filterMax != null) {
+    clauses.push({ maxExperienceYears: { $lte: filterMax, $type: 'number' } });
+  }
+  return clauses;
+}
+
+const experienceBackfillAt = new Map();
+const BACKFILL_COOLDOWN_MS = 15 * 60 * 1000;
+
+function scheduleExperienceBackfill(companyId) {
+  const key = String(companyId);
+  const last = experienceBackfillAt.get(key) || 0;
+  if (Date.now() - last < BACKFILL_COOLDOWN_MS) return;
+  experienceBackfillAt.set(key, Date.now());
+  backfillMissingExperienceYears(companyId).catch(() => {
+    experienceBackfillAt.delete(key);
+  });
+}
+
+/**
+ * Fill min/max years only on open jobs that still have neither bound.
+ * Runs in the background — never blocks the jobs list API.
+ */
 async function backfillMissingExperienceYears(companyId) {
   const jobs = await ScrapedJob.find({
     companyId,
@@ -502,21 +549,31 @@ async function backfillMissingExperienceYears(companyId) {
     minExperienceYears: null,
     maxExperienceYears: null,
   })
-    .select('jobTitle description seniority raw minExperienceYears maxExperienceYears')
-    .limit(500);
+    .select('jobTitle description seniority')
+    .lean()
+    .limit(300);
 
+  const ops = [];
   for (const job of jobs) {
     const derived = extractExperienceYears({
-      ...(job.raw && typeof job.raw === 'object' ? job.raw : {}),
       seniority: job.seniority,
       jobTitle: job.jobTitle,
       description: job.description,
     });
     if (derived.minExperienceYears == null && derived.maxExperienceYears == null) continue;
-    job.minExperienceYears = derived.minExperienceYears;
-    job.maxExperienceYears = derived.maxExperienceYears;
-    await job.save();
+    ops.push({
+      updateOne: {
+        filter: { _id: job._id },
+        update: {
+          $set: {
+            minExperienceYears: derived.minExperienceYears,
+            maxExperienceYears: derived.maxExperienceYears,
+          },
+        },
+      },
+    });
   }
+  if (ops.length) await ScrapedJob.bulkWrite(ops);
 }
 
 export async function getStudentActivityCounts(companyId, studentPhone) {
@@ -930,14 +987,25 @@ export async function updateRecruiterApplicationStatus(
 }
 
 export async function assertStudentAssignedToRecruiter(recruiter, company, studentPhone) {
-  const assigned = await listRecruiterStudents(recruiter, company);
-  const student = assigned.find((s) => s.phone === studentPhone);
-  if (!student) {
+  const phone = String(studentPhone || '').trim();
+  if (!phone) {
     const err = new Error('Student not assigned to this recruiter');
     err.status = 403;
     throw err;
   }
-  return student;
+  const normalized = normalizePhone(phone);
+  const doc = await Student.findOne({
+    companyId: company._id,
+    recruiterUsername: recruiter.username,
+    status: { $ne: 'suspended' },
+    $or: [{ phone }, { phoneNormalized: normalized }],
+  }).lean();
+  if (!doc) {
+    const err = new Error('Student not assigned to this recruiter');
+    err.status = 403;
+    throw err;
+  }
+  return normalizeRecruiterStudent(toExternalStudentShape(doc), company._id.toString());
 }
 
 export async function getRecruiterScrapedJob(companyId, jobId) {
@@ -991,6 +1059,7 @@ export async function fixResumeForStudentJob({
       jobTitle: job.jobTitle,
       jobDescription: job.description,
       companyName: job.companyName,
+      technologySlugs: job.technologySlugs || job.raw?.technology_slugs || [],
       improvements,
       previousAtsScore,
       isRefix: !!isRefix || !!resumeOverride,
@@ -1088,10 +1157,15 @@ export async function downloadAtsResumeForStudentJob({
 
   const details = await fetchStudentDetails(studentPhone).catch(() => null);
   const baseResume = extractResumeFromStudentDetails(details);
-  const resumeForExport =
+  const resumeForExport = applyDeterministicTailorFixes(
     (existingLibrary?.resumeData && typeof existingLibrary.resumeData === 'object'
       ? existingLibrary.resumeData
-      : null) || baseResume;
+      : null) || baseResume || {},
+    {
+      jobDescription: job.description,
+      technologySlugs: job.technologySlugs || job.raw?.technology_slugs || [],
+    }
+  );
 
   const result = await buildResumeDownload(studentPhone, {
     templateId: resolvedTemplateId,
@@ -1297,6 +1371,9 @@ export async function upsertResumeLibraryEntry({
     scrapedJobId: scrapedJobId || null,
   };
 
+  const nextDownloadUrl = downloadUrl || '';
+  const nextDownloadToken = tokenFromDownloadUrl(nextDownloadUrl);
+
   return RecruiterResumeLibrary.findOneAndUpdate(
     filter,
     {
@@ -1305,7 +1382,8 @@ export async function upsertResumeLibraryEntry({
         jobTitle: jobTitle || '',
         companyName: companyName || '',
         resumeData: resumeData || null,
-        downloadUrl: downloadUrl || '',
+        downloadUrl: nextDownloadUrl,
+        ...(nextDownloadToken ? { downloadToken: nextDownloadToken } : {}),
         atsScore,
         atsSummary,
         atsImprovements,

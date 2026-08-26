@@ -18,12 +18,14 @@ export async function listActiveJobTitles(companyId) {
 }
 
 /** Active country codes for a company — used by recruiter job filters. */
-export async function listActiveCountries(companyId) {
+export async function listActiveCountries(companyId, { seed = true } = {}) {
   if (!companyId) return [];
-  try {
-    await seedJobScrapMasterForCompany(companyId);
-  } catch {
-    /* ignore seed failures */
+  if (seed) {
+    try {
+      await seedJobScrapMasterForCompany(companyId);
+    } catch {
+      /* ignore seed failures */
+    }
   }
   const items = await JobScrapMasterItem.find({
     companyId,

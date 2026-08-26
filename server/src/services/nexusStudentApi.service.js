@@ -406,11 +406,12 @@ export async function buildResumeDownload(phone, options = {}) {
     details.resume = options.resume;
   }
 
-  const { buildResumeDocxBuffer, persistResumeDownload } = await import(
-    './resumeDocx.service.js'
-  );
+  const { buildResumeDocxBuffer, buildAppliedResumePacketDocxBuffer, persistResumeDownload } =
+    await import('./resumeDocx.service.js');
 
-  const buffer = await buildResumeDocxBuffer(details, options);
+  const buffer = options.packet
+    ? await buildAppliedResumePacketDocxBuffer(details, options)
+    : await buildResumeDocxBuffer(details, options);
   const publicBaseUrl =
     options.publicBaseUrl ||
     process.env.SERVER_URL ||
@@ -420,6 +421,10 @@ export async function buildResumeDownload(phone, options = {}) {
     buffer,
     details,
     publicBaseUrl,
+    token: options.packet ? undefined : options.downloadToken || undefined,
+    companyId: options.companyId,
+    studentPhone: phone,
+    filename: options.filename,
   });
 
   return {

@@ -1,11 +1,11 @@
 import fs from 'fs';
 import multer from 'multer';
 import { buildResumeDownload, updateStudentResume } from '../services/nexusStudentApi.service.js';
-import { consumeDownloadToken } from '../services/resumeDocx.service.js';
 import { parseResumeText } from '../services/gemini.service.js';
 import { extractTextFromResumeFile } from '../services/resumeTextExtract.service.js';
 import { completeParsedResumeFromText } from '../services/resumeParseComplete.service.js';
 import { enrichResumeForDownload } from '../services/resumeEnrich.service.js';
+import { resolveResumeDownload } from '../services/resumeDownload.service.js';
 import {
   listAppliedResumesForStudent,
   downloadAppliedResumeById,
@@ -89,7 +89,9 @@ export async function downloadAppliedResume(req, res) {
 
 export async function downloadResumeFile(req, res) {
   try {
-    const entry = consumeDownloadToken(req.params.token);
+    const entry = await resolveResumeDownload(req.params.token, {
+      publicBaseUrl: requestPublicBaseUrl(req),
+    });
     if (!entry) return res.status(404).json({ error: 'Download link expired or invalid' });
     if (!fs.existsSync(entry.filePath)) {
       return res.status(404).json({ error: 'Resume file not found' });

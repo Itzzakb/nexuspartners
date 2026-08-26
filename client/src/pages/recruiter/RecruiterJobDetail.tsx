@@ -244,6 +244,17 @@ export default function RecruiterJobDetail() {
                   {job.location}
                 </span>
               )}
+              {(job.minExperienceYears != null || job.maxExperienceYears != null) && (
+                <span>
+                  {job.minExperienceYears != null && job.maxExperienceYears != null
+                    ? job.minExperienceYears === job.maxExperienceYears
+                      ? `${job.minExperienceYears} yrs`
+                      : `${job.minExperienceYears}–${job.maxExperienceYears} yrs`
+                    : job.minExperienceYears != null
+                      ? `${job.minExperienceYears}+ yrs`
+                      : `Up to ${job.maxExperienceYears} yrs`}
+                </span>
+              )}
               {job.datePosted && <span>Posted {formatDate(job.datePosted)}</span>}
               {job.remote && <span className="text-primary">Remote</span>}
               {job.hybrid && <span>Hybrid</span>}

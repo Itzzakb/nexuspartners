@@ -13,7 +13,6 @@ import { useCompanies } from '@/context/CompanyContext';
 import { studentApi, resumeParseApi } from '@/lib/api';
 import { downloadFileFromUrl } from '@/lib/downloadFile';
 import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 import type { StudentListItem } from '@/types/phase7';
 
 type AppliedResume = {
@@ -35,6 +34,15 @@ function formatDate(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function packetFilename(row: AppliedResume) {
+  const title = (row.jobTitle || 'Applied_Resume')
+    .replace(/[<>:"/\\|?*]+/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return `${title || 'Applied_Resume'}.docx`;
 }
 
 export default function SearchResume() {
@@ -193,24 +201,13 @@ export default function SearchResume() {
   const handleDownload = async (row: AppliedResume) => {
     setDownloadingId(row.id);
     try {
-      let url = row.downloadUrl;
-      let filename = `${(row.studentName || 'Resume').replace(/\s+/g, '_')}_${(row.companyName || 'Company').replace(/\s+/g, '_')}.docx`;
-
-      try {
-        const data = await resumeParseApi.downloadApplied(row.id, effectiveCompanyId);
-        if (data.downloadUrl) {
-          url = data.downloadUrl;
-          if (data.filename) filename = data.filename;
-        }
-      } catch {
-        /* fall back to existing url for action-only rows */
-      }
-
-      if (!url) {
+      const filename = packetFilename(row);
+      const data = await resumeParseApi.downloadApplied(row.id, effectiveCompanyId);
+      if (!data.downloadUrl) {
         toast.error('No resume file available for this application yet');
         return;
       }
-      await downloadFileFromUrl(url, filename);
+      await downloadFileFromUrl(data.downloadUrl, data.filename || filename);
       toast.success('Resume downloaded');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Download failed');
@@ -409,7 +406,6 @@ export default function SearchResume() {
                 </thead>
                 <tbody>
                   {resumes.map((row) => {
-                    const canDownload = !!(row.downloadUrl || row.hasResumeData);
                     return (
                       <tr key={row.id} className="border-b border-border last:border-0">
                         <td className="px-5 py-3 font-medium text-heading">{row.jobTitle || '—'}</td>
@@ -442,12 +438,9 @@ export default function SearchResume() {
                             )}
                             <button
                               type="button"
-                              className={cn(
-                                'rounded p-2 text-body hover:bg-muted hover:text-heading',
-                                !canDownload && 'opacity-40'
-                              )}
-                              title="Download resume"
-                              disabled={!canDownload || downloadingId === row.id}
+                              className="rounded p-2 text-body hover:bg-muted hover:text-heading"
+                              title="Download job description and resume"
+                              disabled={downloadingId === row.id}
                               onClick={() => handleDownload(row)}
                             >
                               {downloadingId === row.id ? (

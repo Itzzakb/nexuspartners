@@ -366,12 +366,12 @@
           "minExperienceYears": {
             "type": "number",
             "nullable": true,
-            "description": "Minimum required experience in years (derived from seniority/text when not explicit)"
+            "description": "Minimum required experience in years (from job text when present, else seniority)"
           },
           "maxExperienceYears": {
             "type": "number",
             "nullable": true,
-            "description": "Maximum required experience in years (derived from seniority/text when not explicit)"
+            "description": "Maximum required experience in years (from job text when present, else seniority). Null means open-ended, e.g. 5+."
           },
           "technologySlugs": { "type": "array", "items": { "type": "string" } },
           "salaryMinUsd": { "type": "number", "nullable": true },
@@ -1476,7 +1476,7 @@
       "get": {
         "tags": ["Jobs"],
         "summary": "List jobs for a student",
-        "description": "Returns scraped open jobs matched to the student's **role** as a full phrase against `jobTitle` (e.g. \"Business Analyst\" must appear in the title; individual words are not matched separately) unless free-text `q` is provided. Excludes dropped jobs.\n\nEach job includes enriched card fields: `sourceLabel`, `salaryRange`, `postedAge`, `workType`, `visaSponsorship`, `isSponsored`, `isApplied`, `tags`, `metaLine`, plus `minExperienceYears` / `maxExperienceYears`.\n\n**UI guidance:** show `isApplied` / `isSponsored` badges on cards; do **not** display `urlDomain` (scrape source).\n\n**Experience filter:** `minExp` and/or `maxExp` (aliases `experienceMin` / `experienceMax`) keep jobs whose experience band overlaps the requested range.\n\n**Sponsored filter:** `sponsored` (alias `isSponsored`) as `true` or `false` filters by visa-sponsorship keywords in description/notes.\n\n**Country filter:** `country` (alias `countryCode`) as an ISO-2 code (e.g. `US`, `IN`) keeps jobs whose `countryCode` matches. The response includes `countries` for populating a dropdown.",
+        "description": "Returns scraped open jobs matched to the student's **role** as a full phrase against `jobTitle` (e.g. \"Business Analyst\" must appear in the title; individual words are not matched separately) unless free-text `q` is provided. Excludes dropped jobs.\n\nEach job includes enriched card fields: `sourceLabel`, `salaryRange`, `postedAge`, `workType`, `visaSponsorship`, `isSponsored`, `isApplied`, `tags`, `metaLine`, plus `minExperienceYears` / `maxExperienceYears`.\n\n**UI guidance:** show `isApplied` / `isSponsored` badges on cards; do **not** display `urlDomain` (scrape source).\n\n**Experience filter:** `minExp` / `maxExp` (aliases `experienceMin` / `experienceMax`). If both are the same (e.g. `minExp=4&maxExp=4`), keep jobs a candidate with that many years can qualify for (`job.min ≤ 4 ≤ job.max`); `5+` and `6-16` are excluded. If they differ (e.g. `minExp=4&maxExp=5`), keep jobs whose posted band sits fully inside that range (`job.min ≥ 4` and `job.max ≤ 5`); `2-5`, `5-10`, and `5+` are excluded.\n\n**Sponsored filter:** `sponsored` (alias `isSponsored`) as `true` or `false` filters by visa-sponsorship keywords in description/notes.\n\n**Country filter:** `country` (alias `countryCode`) as an ISO-2 code (e.g. `US`, `IN`) keeps jobs whose `countryCode` matches. The response includes `countries` for populating a dropdown.",
         "operationId": "listJobs",
         "security": [{ "RecruiterBearerAuth": [] }],
         "parameters": [
@@ -1531,13 +1531,13 @@
           {
             "name": "minExp",
             "in": "query",
-            "description": "Minimum experience years filter. Returns jobs whose experience band overlaps this value (alias: experienceMin).",
+            "description": "Lower bound in years. Same as maxExp: jobs a candidate with that many years can do. Different from maxExp: job.min must be ≥ this value. Alias: experienceMin.",
             "schema": { "type": "number", "minimum": 0, "example": 2 }
           },
           {
             "name": "maxExp",
             "in": "query",
-            "description": "Maximum experience years filter. Returns jobs whose experience band overlaps this value (alias: experienceMax).",
+            "description": "Upper bound in years. Same as minExp: jobs a candidate with that many years can do. Different from minExp: job.max must be ≤ this value; 5+ does not match. Alias: experienceMax.",
             "schema": { "type": "number", "minimum": 0, "example": 5 }
           },
           {

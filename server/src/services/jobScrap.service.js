@@ -41,8 +41,91 @@ function toYearNumber(value) {
   return Math.min(50, Math.round(n));
 }
 
+function normalizeExperienceText(raw) {
+  return String(raw || '')
+    .toLowerCase()
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/[—–−‑]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
- * Derive min/max experience years from TheirStack payload, explicit fields, text, or seniority.
+ * Pull the overall years-of-experience requirement from title/description.
+ * Prefers phrases like "6-16 years of experience" / "5+ yrs" over incidental
+ * "2+ years with React", and over TheirStack seniority bands.
+ */
+function parseExperienceFromText(rawText) {
+  const text = normalizeExperienceText(rawText);
+  if (!text) return null;
+
+  const yearUnit = String.raw`(?:years?|yrs?|yr)\b`;
+  const expWord = String.raw`(?:of\s+)?(?:professional\s+)?(?:relevant\s+)?(?:work\s+)?(?:experience|exp)\b`;
+  const candidates = [];
+
+  const add = (minRaw, maxRaw, score) => {
+    let min = toYearNumber(minRaw);
+    let max = toYearNumber(maxRaw);
+    if (min == null && max == null) return;
+    if (min != null && max != null && min > max) [min, max] = [max, min];
+    candidates.push({ minExperienceYears: min, maxExperienceYears: max, score });
+  };
+
+  const rangeRe = new RegExp(
+    `(\\d{1,2})\\s*(?:-|to)\\s*(\\d{1,2})\\s*\\+?\\s*${yearUnit}(?:\\s+${expWord})?`,
+    'g'
+  );
+  for (const match of text.matchAll(rangeRe)) {
+    const hasExp = /experience|\bexp\b/.test(match[0]);
+    add(match[1], match[2], hasExp ? 30 + Number(match[1]) : 8);
+  }
+
+  const plusRe = new RegExp(
+    `(\\d{1,2})\\s*(?:\\+|or more)\\s*${yearUnit}(?:\\s+${expWord})?`,
+    'g'
+  );
+  for (const match of text.matchAll(plusRe)) {
+    const hasExp = /experience|\bexp\b/.test(match[0]);
+    add(match[1], null, hasExp ? 30 + Number(match[1]) : 8);
+  }
+
+  const atLeastRe = new RegExp(
+    `(?:at\\s+least|minimum(?:\\s+of)?|min(?:imum)?)\\s+(\\d{1,2})\\s*\\+?\\s*${yearUnit}(?:\\s+${expWord})?`,
+    'g'
+  );
+  for (const match of text.matchAll(atLeastRe)) {
+    const hasExp = /experience|\bexp\b/.test(match[0]);
+    add(match[1], null, hasExp ? 30 + Number(match[1]) : 10);
+  }
+
+  const exactRe = new RegExp(
+    `(?<!\\d\\s*(?:-|to)\\s*)(\\d{1,2})\\s*${yearUnit}\\s+${expWord}`,
+    'g'
+  );
+  for (const match of text.matchAll(exactRe)) {
+    add(match[1], null, 24 + Number(match[1]));
+  }
+
+  if (!candidates.length) return null;
+
+  const withExp = candidates.filter((c) => c.score >= 20);
+  const pool = withExp.length ? withExp : candidates;
+  pool.sort(
+    (a, b) =>
+      (b.minExperienceYears ?? -1) - (a.minExperienceYears ?? -1) || b.score - a.score
+  );
+  const best = pool[0];
+  return {
+    minExperienceYears: best.minExperienceYears,
+    maxExperienceYears: best.maxExperienceYears,
+  };
+}
+
+/**
+ * Derive min/max experience years from explicit fields, job text, or seniority.
+ * Job-description years win over TheirStack seniority (e.g. mid_level = 2-5)
+ * so a posting that says "6-16 years" is not stored as a 2-5 band.
  */
 export function extractExperienceYears(job = {}) {
   const explicitMin = toYearNumber(
@@ -69,25 +152,10 @@ export function extractExperienceYears(job = {}) {
     return { minExperienceYears: min, maxExperienceYears: max };
   }
 
-  const text = `${job.job_title || job.jobTitle || ''} ${job.description || ''}`.toLowerCase();
-  const rangeMatch = text.match(/(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*\+?\s*years?/);
-  if (rangeMatch) {
-    let min = toYearNumber(rangeMatch[1]);
-    let max = toYearNumber(rangeMatch[2]);
-    if (min != null && max != null && min > max) [min, max] = [max, min];
-    return { minExperienceYears: min, maxExperienceYears: max };
-  }
-
-  const plusMatch = text.match(/(\d{1,2})\s*\+\s*years?/);
-  if (plusMatch) {
-    const min = toYearNumber(plusMatch[1]);
-    return { minExperienceYears: min, maxExperienceYears: null };
-  }
-
-  const atLeastMatch = text.match(/(?:at least|minimum of|min(?:imum)?)\s*(\d{1,2})\s*years?/);
-  if (atLeastMatch) {
-    return { minExperienceYears: toYearNumber(atLeastMatch[1]), maxExperienceYears: null };
-  }
+  const fromText = parseExperienceFromText(
+    `${job.job_title || job.jobTitle || ''} ${job.description || ''}`
+  );
+  if (fromText) return fromText;
 
   const seniorityKey = String(job.seniority || '')
     .trim()

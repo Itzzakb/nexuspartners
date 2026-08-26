@@ -13,9 +13,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ResumeTemplate from '../models/ResumeTemplate.js';
+import ResumeDownloadToken from '../models/ResumeDownloadToken.js';
 import { isCloudinaryConfigured, uploadBuffer } from './cloudinary.service.js';
 import { enrichResumeForDownload } from './resumeEnrich.service.js';
 import { ATS_RESUME_TEMPLATE } from '../constants/atsResumeTemplate.js';
+import { normalizeDownloadToken } from '../utils/resumeDownloadToken.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, '../../uploads/resumes');
@@ -29,21 +31,27 @@ const SIZE_BODY = 22; // 11pt
 const SIZE_HEADING = 22; // 11pt bold
 const BULLET_REF = 'ats-resume-bullets';
 
-/** @type {Map<string, { filePath: string, filename: string, expiresAt: number }>} */
+/** In-process cache. Durable source of truth is ResumeDownloadToken in Mongo. */
+/** @type {Map<string, { filePath: string, filename: string, cloudinaryUrl?: string }>} */
 const downloadTokens = new Map();
-const TOKEN_TTL_MS = 15 * 60 * 1000;
 
 function isVisible(item) {
   return item && item.visible !== false;
 }
 
 function pointVisible(p) {
-  return p && p.form !== false && String(p.point || '').trim();
+  if (!p || p.form === false) return false;
+  if (typeof p.point === 'boolean') return false;
+  const text = String(p.point || '').trim();
+  if (!text || /^(true|false|null|undefined|nan)$/i.test(text)) return false;
+  return true;
 }
 
 function clean(value) {
+  if (typeof value === 'boolean') return '';
   const s = String(value ?? '').trim();
   if (!s || s.toUpperCase() === 'UNKNOWN') return '';
+  if (/^(true|false|null|undefined|nan)$/i.test(s)) return '';
   return s;
 }
 
@@ -699,14 +707,55 @@ async function resolveSections(templateId, companyId) {
   return fromTemplate.length ? fromTemplate : defaults;
 }
 
-export async function buildResumeDocxBuffer(details, options = {}) {
+function packetHeading(text) {
+  return new Paragraph({
+    spacing: { before: 200, after: 80 },
+    children: [
+      new TextRun({
+        text,
+        bold: true,
+        size: SIZE_HEADING,
+        font: FONT,
+        color: '000000',
+      }),
+    ],
+  });
+}
+
+function htmlToPlainParagraphs(html) {
+  const raw = String(html || '');
+  if (!raw.trim()) return [];
+  const withBreaks = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/\s*(p|div|h[1-6]|tr|li)\s*>/gi, '\n')
+    .replace(/<\s*li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  return withBreaks
+    .split(/\n+/)
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+const PACKET_INTERVIEW_QUESTIONS = [
+  'Can you walk me through your background?',
+  'What do you know about our company and what we do?',
+  'Why do you think this role aligns well with your skills and experience?',
+];
+
+async function buildResumeBodyParagraphs(details, options = {}) {
   const { resume } = resolveResume(details, options);
   const name = clean(details.name || details.studentname) || 'Candidate';
   const jobTitle = clean(resume.jobtitle) || clean(details.role);
   const sections = await resolveSections(options.templateId, options.companyId);
 
   const children = [
-    // Name — bold, preserve casing (sample is not ALL CAPS)
     new Paragraph({
       alignment: AlignmentType.LEFT,
       spacing: { after: 80 },
@@ -763,7 +812,6 @@ export async function buildResumeDocxBuffer(details, options = {}) {
     );
   }
 
-  // Horizontal rule between profile header and Professional Summary
   children.push(
     new Paragraph({
       spacing: { before: 40, after: 160 },
@@ -783,6 +831,10 @@ export async function buildResumeDocxBuffer(details, options = {}) {
     children.push(...SECTION_BUILDERS[key](resume));
   }
 
+  return children;
+}
+
+function packResumeDocument(children) {
   const doc = new Document({
     numbering: {
       config: [
@@ -808,7 +860,6 @@ export async function buildResumeDocxBuffer(details, options = {}) {
       {
         properties: {
           page: {
-            // ~0.75" margins — clean ATS look like the client sample
             margin: { top: 720, right: 720, bottom: 720, left: 720 },
           },
         },
@@ -821,6 +872,74 @@ export async function buildResumeDocxBuffer(details, options = {}) {
   });
 
   return Packer.toBuffer(doc);
+}
+
+export async function buildResumeDocxBuffer(details, options = {}) {
+  const children = await buildResumeBodyParagraphs(details, options);
+  return packResumeDocument(children);
+}
+
+/** Admin Search Resume packet: job header + JD + applied resume (matches sample DOCX). */
+export async function buildAppliedResumePacketDocxBuffer(details, options = {}) {
+  const company = clean(options.companyname || options.companyName);
+  const jobTitle = clean(options.jobtitle || options.jobTitle || details.role);
+  const header = [company, jobTitle].filter(Boolean).join(' – ');
+  const jdLines = htmlToPlainParagraphs(options.jobdescription || options.jobDescription || '');
+  const resumeParas = await buildResumeBodyParagraphs(details, options);
+
+  const children = [];
+  if (header) {
+    children.push(
+      new Paragraph({
+        spacing: { after: 200 },
+        children: [
+          new TextRun({
+            text: header,
+            bold: true,
+            size: SIZE_NAME,
+            font: FONT,
+            color: '000000',
+          }),
+        ],
+      })
+    );
+  }
+
+  children.push(packetHeading('Job Description'));
+  if (jdLines.length) {
+    for (const line of jdLines) {
+      if (/^[•\-\*]\s+/.test(line)) {
+        const item = bullet(line);
+        if (item) children.push(item);
+      } else {
+        children.push(bodyPara(line, { spacing: { after: 80 } }));
+      }
+    }
+  } else {
+    children.push(bodyPara('Job description is not available for this application.'));
+  }
+
+  children.push(packetHeading('Application Resume'));
+  children.push(...resumeParas);
+
+  children.push(packetHeading('Please prepare responses for the questions listed below'));
+  for (const question of PACKET_INTERVIEW_QUESTIONS) {
+    const item = bullet(`"${question}"`);
+    if (item) children.push(item);
+  }
+
+  return packResumeDocument(children);
+}
+
+export function packetDownloadFilename(jobTitle, jobNumericId) {
+  const title = String(jobTitle || 'Applied_Resume')
+    .replace(/[<>:"/\\|?*]+/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 80);
+  const id = String(jobNumericId || '').replace(/\D/g, '');
+  return `${title || 'Applied_Resume'}${id ? `_${id}` : ''}.docx`;
 }
 
 function formatDownloadDateTime(date = new Date()) {
@@ -838,33 +957,77 @@ function safeFilename(name) {
   return `${studentName || 'Resume'} - ${dateTime}.docx`;
 }
 
+function sanitizeDownloadFilename(name) {
+  let filename = String(name || 'Resume.docx')
+    .replace(/[<>:"/\\|?*]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!filename) filename = 'Resume.docx';
+  if (!/\.docx$/i.test(filename)) filename = `${filename}.docx`;
+  return filename.slice(0, 180);
+}
+
 export async function ensureResumeUploadDir() {
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
 }
 
-export function registerDownloadToken(filePath, filename) {
-  const token = crypto.randomBytes(24).toString('hex');
-  downloadTokens.set(token, {
-    filePath,
-    filename,
-    expiresAt: Date.now() + TOKEN_TTL_MS,
-  });
+function toTokenEntry(doc) {
+  if (!doc) return null;
+  return {
+    filePath: doc.filePath,
+    filename: doc.filename,
+    cloudinaryUrl: doc.cloudinaryUrl || '',
+  };
+}
+
+export async function registerDownloadToken(filePath, filename, extra = {}) {
+  const token = normalizeDownloadToken(extra.token) || crypto.randomBytes(24).toString('hex');
+  const $set = { filePath, filename };
+  if (extra.cloudinaryUrl) $set.cloudinaryUrl = extra.cloudinaryUrl;
+  if (extra.companyId) $set.companyId = extra.companyId;
+  if (extra.studentPhone) $set.studentPhone = extra.studentPhone;
+  if (extra.resumeLibraryId) $set.resumeLibraryId = extra.resumeLibraryId;
+
+  downloadTokens.set(token, toTokenEntry({ ...$set, filename, filePath }));
+  await ResumeDownloadToken.findOneAndUpdate(
+    { token },
+    { $set },
+    { upsert: true, new: true }
+  );
   return token;
 }
 
-export function consumeDownloadToken(token) {
-  const entry = downloadTokens.get(token);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    downloadTokens.delete(token);
-    return null;
-  }
+export async function getDownloadToken(token) {
+  const key = normalizeDownloadToken(token);
+  if (!key) return null;
+  const cached = downloadTokens.get(key);
+  if (cached) return cached;
+  const doc = await ResumeDownloadToken.findOne({ token: key }).lean();
+  if (!doc) return null;
+  const entry = toTokenEntry(doc);
+  downloadTokens.set(key, entry);
   return entry;
 }
 
-export async function persistResumeDownload({ buffer, details, publicBaseUrl }) {
+/** @deprecated Use getDownloadToken — tokens are long-lived and no longer consumed. */
+export async function consumeDownloadToken(token) {
+  return getDownloadToken(token);
+}
+
+export async function persistResumeDownload({
+  buffer,
+  details,
+  publicBaseUrl,
+  token: existingToken,
+  companyId,
+  studentPhone,
+  resumeLibraryId,
+  filename: filenameOverride,
+}) {
   await ensureResumeUploadDir();
-  const filename = safeFilename(details.name || details.studentname);
+  const filename = sanitizeDownloadFilename(
+    filenameOverride || safeFilename(details.name || details.studentname)
+  );
   const storedName = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]+/g, '_')}`;
   const filePath = path.join(UPLOAD_DIR, storedName);
   await fs.writeFile(filePath, buffer);
@@ -883,7 +1046,13 @@ export async function persistResumeDownload({ buffer, details, publicBaseUrl }) 
     }
   }
 
-  const token = registerDownloadToken(filePath, filename);
+  const token = await registerDownloadToken(filePath, filename, {
+    token: existingToken,
+    cloudinaryUrl,
+    companyId,
+    studentPhone: studentPhone || details.phone || details.mobile || '',
+    resumeLibraryId,
+  });
   const localUrl = `${publicBaseUrl.replace(/\/$/, '')}/api/resume/download/${token}`;
 
   return {
@@ -892,6 +1061,7 @@ export async function persistResumeDownload({ buffer, details, publicBaseUrl }) 
     localDownloadUrl: localUrl,
     cloudinaryUrl,
     filePath,
+    token,
   };
 }
 

@@ -228,11 +228,7 @@ export async function listJobs(req, res) {
       return res.status(400).json({ error: 'studentPhone is required' });
     }
 
-    const assigned = await listRecruiterStudents(req.recruiter, req.company);
-    const student = assigned.find((s) => s.phone === studentPhone);
-    if (!student) {
-      return res.status(403).json({ error: 'Student not assigned to this recruiter' });
-    }
+    const student = await assertStudentAssignedToRecruiter(req.recruiter, req.company, studentPhone);
 
     const page = Math.max(parseInt(req.query.page, 10) || 0, 0);
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
@@ -256,7 +252,7 @@ export async function listJobs(req, res) {
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to list jobs' });
+    return res.status(err.status || 500).json({ error: err.message || 'Failed to list jobs' });
   }
 }
 

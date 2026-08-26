@@ -11,6 +11,7 @@ const recruiterResumeLibrarySchema = new mongoose.Schema(
     companyName: { type: String, default: '' },
     resumeData: { type: mongoose.Schema.Types.Mixed, default: null },
     downloadUrl: { type: String, default: '' },
+    downloadToken: { type: String, default: '', index: true },
     atsScore: { type: Number, default: null },
     atsSummary: { type: String, default: '' },
     atsImprovements: { type: [String], default: [] },
