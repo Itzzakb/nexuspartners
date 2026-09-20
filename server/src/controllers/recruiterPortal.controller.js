@@ -312,6 +312,7 @@ export async function dropJob(req, res) {
 
 export async function applyJob(req, res) {
   try {
+    return;
     const { studentPhone } = req.body;
     if (!studentPhone) return res.status(400).json({ error: 'studentPhone is required' });
 
