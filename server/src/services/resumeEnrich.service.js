@@ -275,6 +275,22 @@ function mapProjects(items) {
 }
 
 /**
+ * If the opening summary bullet names a role ("X with N years…"), keep X equal to
+ * the student's jobtitle so the same candidate is not retitled per job.
+ */
+export function lockSummaryOpeningRole(points, role) {
+  const roleTrim = String(role || '').trim();
+  if (!roleTrim || !points?.length) return points;
+  const first = String(points[0]?.point || '').trim();
+  const match = first.match(/^(.{2,80}?)\s+(with\b[\s\S]*)$/i);
+  if (!match) return points;
+  const prefix = match[1].trim();
+  if (!prefix || prefix.toLowerCase() === roleTrim.toLowerCase()) return points;
+  if (prefix.split(/\s+/).length > 8) return points;
+  return [{ ...points[0], point: `${roleTrim} ${match[2]}` }, ...points.slice(1)];
+}
+
+/**
  * @param {object} details - external student shape (name, role, resume, additionalDetails, …)
  * @param {object} [options]
  * @returns {object} enriched resume JSON
@@ -284,7 +300,7 @@ export function enrichResumeForDownload(details = {}, options = {}) {
   const extras = detailMap(details);
 
   const resume = {
-    jobtitle: clean(raw.jobtitle || raw.jobTitle || details.role || options.jobtitle),
+    jobtitle: clean(raw.jobtitle || raw.jobTitle || details.role),
     education: normalizeEducation(raw.education || raw.educations),
     experience: normalizeExperience(raw.experience || raw.experiences || raw.workExperience),
     professionalsummary_points: normalizePoints(

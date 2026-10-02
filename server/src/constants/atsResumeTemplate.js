@@ -77,7 +77,8 @@ FIX RESUME / TAILOR RULES (match competitor-style tailored resumes):
 
 - CERTIFICATIONS: keep all real certifications from the base unchanged.
 
-- Do NOT change jobtitle.
+- Do NOT change jobtitle. The headline role and the way the candidate is titled in the professional summary must stay exactly the student's jobtitle on every job. Do not retitle them to match the job posting (for example, do not change "Business Analyst" into "ServiceNow Business Analyst"). Add JD keywords in summary bullets, experience bullets, and skills without changing that role label.
+- Do NOT change experience position titles, employers, locations, or dates.
 
 - Do not invent employers, degrees, certifications, dates, or metrics not grounded in the base resume.
 

@@ -1,5 +1,6 @@
 import { atsTemplateFixResumeInstructions } from '../constants/atsResumeTemplate.js';
 import { parseJsonFromLlmText, stripLlmCodeFences } from '../utils/llmJson.js';
+import { lockSummaryOpeningRole } from './resumeEnrich.service.js';
 
 const NEXUS_RESUME_PARSE_URL =
   process.env.NEXUS_RESUME_PARSE_URL ||
@@ -507,11 +508,14 @@ export function normalizeTailoredResume(baseResume, fixedResume) {
     ? fixed.professionalsummary_points.filter((p) => pointText(p))
     : null;
   if (fixedSummary?.length) {
-    out.professionalsummary_points = fixedSummary.map((p) => ({
-      ...p,
-      point: pointText(p),
-      form: p.form !== false,
-    }));
+    out.professionalsummary_points = lockSummaryOpeningRole(
+      fixedSummary.map((p) => ({
+        ...p,
+        point: pointText(p),
+        form: p.form !== false,
+      })),
+      base.jobtitle || base.jobTitle || ''
+    );
   }
 
   const fixedSkills =
@@ -646,9 +650,10 @@ ${JSON.stringify(resumeData, null, 2)}
 
 Return ONLY the full updated resume JSON object.
 IMPORTANT:
-- Do NOT change the "jobtitle" field.
+- Do NOT change the "jobtitle" field. It is the student's role and must be identical for every job.
+- Do NOT retitle the candidate in the professional summary. If the summary names their role, keep that exact jobtitle wording. You may weave in JD keywords around it.
 - Rewrite professionalsummary_points for the job (keep a similar bullet count).
-- Keep every experience role (company/title/dates); rewrite responsibility points as needed for the JD${improvementList.length ? ' and the listed improvements' : ''}.
+- Keep every experience role (company, position title, location, dates) exactly as given; rewrite responsibility points as needed for the JD${improvementList.length ? ' and the listed improvements' : ''}.
 - Every experience/summary "point" must be a real sentence. Never output boolean true/false, or the words "true"/"false", as a bullet.
 - Keep education and certifications from the source resume.
 - Keep existing techinicalskills and ADD every missing required skill listed above${improvementList.length ? ' plus any skills implied by the improvements' : ''}.`;

@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 import ResumeTemplate from '../models/ResumeTemplate.js';
 import ResumeDownloadToken from '../models/ResumeDownloadToken.js';
 import { isCloudinaryConfigured, uploadBuffer } from './cloudinary.service.js';
-import { enrichResumeForDownload } from './resumeEnrich.service.js';
+import { enrichResumeForDownload, lockSummaryOpeningRole } from './resumeEnrich.service.js';
 import { ATS_RESUME_TEMPLATE } from '../constants/atsResumeTemplate.js';
 import { normalizeDownloadToken } from '../utils/resumeDownloadToken.js';
 
@@ -136,8 +136,14 @@ function bullet(text, { boldPrefix = '', boldAll = false } = {}) {
 
 function resolveResume(details, options = {}) {
   const { resume, contactExtras } = enrichResumeForDownload(details, options);
-  if (options.jobtitle) resume.jobtitle = clean(options.jobtitle) || resume.jobtitle;
-  // ATS exports: soft page fit after tailor (summary/experience already rewritten+compressed).
+  // options.jobtitle is the opening being applied to. It is used only for ATS
+  // keyword fitting. The headline under the name stays the student's role.
+  if (resume.jobtitle && Array.isArray(resume.professionalsummary_points)) {
+    resume.professionalsummary_points = lockSummaryOpeningRole(
+      resume.professionalsummary_points,
+      resume.jobtitle
+    );
+  }
   return {
     resume: fitResumeToAtsPageBudget(resume, {
       jobTitle: options.jobtitle || resume.jobtitle || details.role || '',

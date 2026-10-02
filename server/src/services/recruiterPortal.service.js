@@ -1068,8 +1068,8 @@ export async function fixResumeForStudentJob({
     instructions
   );
 
-  // Keep the student's stored resume target title; only tailor content for the job.
-  // Job-specific title is applied at ATS download time via options.jobtitle.
+  // Keep the student's stored role on every tailored resume. ATS download must
+  // not replace that headline with the job opening's title.
   if (fixedResume && typeof fixedResume === 'object') {
     if (originalJobTitle) {
       fixedResume.jobtitle = originalJobTitle;
