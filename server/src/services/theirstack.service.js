@@ -39,6 +39,11 @@ export function buildSearchPayload(profileFilters) {
   };
 
   if (filters.job_title_or?.length) payload.job_title_or = filters.job_title_or;
+  if (filters.job_seniority_or?.length) {
+    const allowed = new Set(['junior', 'mid_level', 'senior', 'staff', 'c_level']);
+    const seniority = filters.job_seniority_or.filter((value) => allowed.has(value));
+    if (seniority.length) payload.job_seniority_or = seniority;
+  }
   if (filters.job_country_code_or?.length) payload.job_country_code_or = filters.job_country_code_or;
   if (filters.url_domain_or?.length) {
     payload.url_domain_or = expandUrlDomainList(filters.url_domain_or);

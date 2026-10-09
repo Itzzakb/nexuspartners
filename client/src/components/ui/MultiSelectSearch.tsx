@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 export type MultiSelectOption = {
   value: string;
   label: string;
+  /** Extra text shown beside the label, e.g. an experience range. */
+  detail?: string;
 };
 
 interface MultiSelectSearchProps {
@@ -42,7 +44,11 @@ export function MultiSelectSearch({
     const q = query.trim().toLowerCase();
     return options.filter((o) => {
       if (!q) return true;
-      return o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q);
+      return (
+        o.label.toLowerCase().includes(q) ||
+        o.value.toLowerCase().includes(q) ||
+        (o.detail || '').toLowerCase().includes(q)
+      );
     });
   }, [options, query]);
 
@@ -96,7 +102,7 @@ export function MultiSelectSearch({
               key={val}
               className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
             >
-              {opt?.label || val}
+              {opt ? (opt.detail ? `${opt.label} · ${opt.detail}` : opt.label) : val}
               {!disabled && (
                 <button
                   type="button"
@@ -177,10 +183,15 @@ export function MultiSelectSearch({
                     >
                       {checked && <Check className="h-3 w-3" />}
                     </span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-heading">{opt.label}</span>
-                      {opt.label !== opt.value && (
-                        <span className="block truncate text-xs text-body">{opt.value}</span>
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-heading">{opt.label}</span>
+                        {!opt.detail && opt.label !== opt.value && (
+                          <span className="block truncate text-xs text-body">{opt.value}</span>
+                        )}
+                      </span>
+                      {opt.detail && (
+                        <span className="shrink-0 text-xs text-body">{opt.detail}</span>
                       )}
                     </span>
                   </button>

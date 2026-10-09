@@ -15,6 +15,11 @@ const SECTION_OPTIONS = [
     mapsTo: 'Form: Professional Summary',
   },
   {
+    id: 'skills',
+    label: 'Technical Skills',
+    mapsTo: 'Form: Technical Skills + Relevant Coursework',
+  },
+  {
     id: 'experience',
     label: 'Experience / Projects',
     mapsTo: 'Form: Work experience, internships, or fresher projects',
@@ -23,11 +28,6 @@ const SECTION_OPTIONS = [
     id: 'education',
     label: 'Education',
     mapsTo: 'Form: Masters + Bachelors',
-  },
-  {
-    id: 'skills',
-    label: 'Technical Skills',
-    mapsTo: 'Form: Technical Skills + Relevant Coursework',
   },
   {
     id: 'certifications',
@@ -41,11 +41,11 @@ const FULL_ATS_SECTIONS = SECTION_OPTIONS.map((s) => s.id);
 const RECOMMENDED_TEMPLATE_CONTENT = `ATS Resume Template — Nexus Partners
 
 Use this section order for Build & Download:
-1. Header — Name, Preferred Role, Email, Phone, City/State, LinkedIn, Visa
+1. Header — Name, Preferred Role, City/State, Ready to Relocate, Email, Phone
 2. Professional Summary
-3. Experience (or Projects / Internships for freshers)
-4. Education
-5. Technical Skills (+ Relevant Coursework)
+3. Technical Skills (+ Relevant Coursework)
+4. Experience (or Projects / Internships for freshers) — company, location, then dates
+5. Education (include Masters start and end dates)
 6. Certifications
 
 Formatting rules:

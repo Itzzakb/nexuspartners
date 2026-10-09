@@ -40,8 +40,20 @@ type Tab = 'profiles' | 'jobs' | 'history';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** TheirStack job_seniority_or values with documented experience bands. */
+const SENIORITY_OPTIONS = [
+  { value: 'junior', label: 'Junior', detail: '0–2 years' },
+  { value: 'mid_level', label: 'Mid-level', detail: '2–5 years' },
+  { value: 'senior', label: 'Senior', detail: '5–8+ years' },
+  { value: 'staff', label: 'Staff', detail: '8–12+ years' },
+  { value: 'c_level', label: 'C-level', detail: '10–15+ years' },
+];
+
+const SENIORITY_LABELS = new Map(SENIORITY_OPTIONS.map((option) => [option.value, option]));
+
 const EMPTY_FILTERS: JobSearchFilters = {
   job_title_or: [],
+  job_seniority_or: [],
   job_country_code_or: [],
   url_domain_or: [],
   url_domain_not: [],
@@ -94,6 +106,13 @@ function scheduleSummary(profile: JobSearchProfile) {
 function FilterChips({ filters }: { filters: JobSearchFilters }) {
   const chips: string[] = [];
   if (filters.job_title_or.length) chips.push(`Titles: ${filters.job_title_or.slice(0, 3).join(', ')}${filters.job_title_or.length > 3 ? '…' : ''}`);
+  if (filters.job_seniority_or?.length) {
+    const labels = filters.job_seniority_or.map((value) => {
+      const option = SENIORITY_LABELS.get(value);
+      return option ? `${option.label} (${option.detail})` : value;
+    });
+    chips.push(`Seniority: ${labels.join(', ')}`);
+  }
   if (filters.job_country_code_or.length) chips.push(`Countries: ${filters.job_country_code_or.join(', ')}`);
   if (filters.url_domain_or.length) chips.push(`Domains: ${filters.url_domain_or.join(', ')}`);
   if (filters.url_domain_not?.length) chips.push(`Except: ${filters.url_domain_not.join(', ')}`);
@@ -146,6 +165,7 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
   const [scheduleDays, setScheduleDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [timezone, setTimezone] = useState('Asia/Kolkata');
   const [selectedTitles, setSelectedTitles] = useState<string[]>([]);
+  const [selectedSeniority, setSelectedSeniority] = useState<string[]>([]);
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [exceptDomains, setExceptDomains] = useState<string[]>([]);
@@ -206,6 +226,7 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
     setScheduleDays(initial?.scheduleDays ?? [1, 2, 3, 4, 5]);
     setTimezone(initial?.timezone ?? 'Asia/Kolkata');
     setSelectedTitles(f.job_title_or || []);
+    setSelectedSeniority(f.job_seniority_or || []);
     setSelectedCountries(f.job_country_code_or || []);
     setSelectedDomains(f.url_domain_or || []);
     setExceptDomains(f.url_domain_not || []);
@@ -241,13 +262,14 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
     }
     if (
       !selectedTitles.length &&
+      !selectedSeniority.length &&
       !selectedCountries.length &&
       !selectedDomains.length &&
       !exceptDomains.length &&
       !selectedCities.length &&
       !selectedCompanies.length
     ) {
-      toast.error('Select at least one job title, country, domain, city, or company');
+      toast.error('Select at least one job title, seniority, country, domain, city, or company');
       return;
     }
     if (postedMode === 'range' && !postedGte && !postedLte) {
@@ -264,6 +286,7 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
 
     const filters: JobSearchFilters = {
       job_title_or: selectedTitles,
+      job_seniority_or: selectedSeniority,
       job_country_code_or: selectedCountries,
       url_domain_or: selectedDomains.filter((d) => !exceptDomains.includes(d)),
       url_domain_not: exceptDomains,
@@ -334,6 +357,20 @@ function ProfileModal({ open, initial, companyId, masterItems, onClose, onSaved 
                 placeholder="Search job titles…"
                 emptyMessage="No job titles available"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-heading">Seniority</label>
+              <MultiSelectSearch
+                options={SENIORITY_OPTIONS}
+                value={selectedSeniority}
+                onChange={setSelectedSeniority}
+                placeholder="Search seniority…"
+                emptyMessage="No seniority levels match"
+              />
+              <p className="mt-1 text-xs text-body">
+                TheirStack <code className="text-[11px]">job_seniority_or</code> — return jobs at any of these
+                levels. Ranges are estimated years of experience.
+              </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>

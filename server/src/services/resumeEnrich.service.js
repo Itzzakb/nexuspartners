@@ -106,10 +106,112 @@ function normalizeEducation(items) {
         visible: edu.visible !== false,
         education_title: clean(edu.education_title || edu.degree || edu.field || edu.title),
         university: clean(edu.university || edu.school || edu.college),
-        start_end: clean(edu.start_end || edu.dates || edu.graduation || edu.year),
+        start_end: clean(
+          edu.start_end ||
+            edu.dates ||
+            formatEducationDateRange(edu.start || edu.startDate, edu.end || edu.endDate) ||
+            edu.graduation ||
+            edu.year
+        ),
       };
     })
     .filter((e) => e && (e.education_title || e.university));
+}
+
+function extraValue(extras, ...keys) {
+  for (const key of keys) {
+    const hit = extras[String(key).toLowerCase()];
+    if (hit) return hit;
+  }
+  return '';
+}
+
+function educationDatesFromExtras(extras, level) {
+  const start = extraValue(extras, `${level} Start Date`);
+  const end = extraValue(extras, `${level} End Date`);
+  const formatted = formatEducationDateRange(start, end);
+  if (formatted) return formatted;
+  const combined = extraValue(extras, `${level} Start-End Date`, `${level} Dates`);
+  if (combined) return combined;
+  return [extraValue(extras, `${level} Graduated Month`), extraValue(extras, `${level} Graduated Year`)]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+function educationLevel(edu) {
+  const text = `${edu.education_title || ''} ${edu.university || ''}`.toLowerCase();
+  if (/\b(master|m\.?\s?s\.?|mba|m\.?\s?tech|msc|m\.sc)\b/.test(text)) return 'masters';
+  if (/\b(bachelor|b\.?\s?s\.?|b\.?\s?tech|b\.?\s?e\.?|bsc|b\.sc|undergrad)\b/.test(text)) return 'bachelors';
+  return '';
+}
+
+/** Fill missing degree dates from Additional Details (Masters/Bachelors Start and End Date). */
+function fillEducationDates(education, extras) {
+  const mastersDates = educationDatesFromExtras(extras, 'Masters');
+  const bachelorsDates = educationDatesFromExtras(extras, 'Bachelors');
+  const mastersUni = extraValue(extras, 'Masters University', "Master's University");
+  const mastersField = extraValue(extras, 'Masters Field', "Master's Field");
+  const bachelorsUni = extraValue(extras, 'Bachelors University', "Bachelor's University");
+  const bachelorsField = extraValue(extras, 'Bachelors Field', "Bachelor's Field");
+
+  const items = asArray(education).map((edu) => ({ ...edu }));
+  if (!items.length) {
+    if (mastersUni || mastersField || mastersDates) {
+      items.push({
+        visible: true,
+        education_title: mastersField || "Master's",
+        university: mastersUni,
+        start_end: mastersDates,
+      });
+    }
+    if (bachelorsUni || bachelorsField || bachelorsDates) {
+      items.push({
+        visible: true,
+        education_title: bachelorsField || "Bachelor's",
+        university: bachelorsUni,
+        start_end: bachelorsDates,
+      });
+    }
+    return items;
+  }
+
+  const assign = (level, dates) => {
+    if (!dates) return;
+    let idx = items.findIndex((edu) => educationLevel(edu) === level);
+    if (idx < 0 && items.length >= 2) idx = level === 'masters' ? 0 : 1;
+    else if (idx < 0 && items.length === 1 && level === 'masters' && educationLevel(items[0]) !== 'bachelors') {
+      idx = 0;
+    }
+    if (idx < 0 || !items[idx] || clean(items[idx].start_end)) return;
+    items[idx] = { ...items[idx], start_end: dates };
+  };
+
+  assign('masters', mastersDates);
+  assign('bachelors', bachelorsDates);
+  return items;
+}
+
+function headlineLocation(details, extras) {
+  const city = clean(details.city) || extraValue(extras, 'City');
+  const state = clean(details.state) || extraValue(extras, 'State');
+  if (city && state) return `${city}, ${state}`;
+  if (city || state) return city || state;
+  return extraValue(extras, 'Location', 'Current Location');
+}
+
+/** Template tag. Hidden only when an additional detail explicitly says no. */
+function readyToRelocate(extras) {
+  const value = extraValue(
+    extras,
+    'Ready to Relocate',
+    'Willing to Relocate',
+    'Open to Relocation',
+    'Relocation'
+  ).toLowerCase();
+  if (!value) return true;
+  if (/^(no|false|n|not willing|nope|none)$/.test(value)) return false;
+  return true;
 }
 
 function normalizeSkills(items, fallbackText = '') {
@@ -301,7 +403,7 @@ export function enrichResumeForDownload(details = {}, options = {}) {
 
   const resume = {
     jobtitle: clean(raw.jobtitle || raw.jobTitle || details.role),
-    education: normalizeEducation(raw.education || raw.educations),
+    education: fillEducationDates(normalizeEducation(raw.education || raw.educations), extras),
     experience: normalizeExperience(raw.experience || raw.experiences || raw.workExperience),
     professionalsummary_points: normalizePoints(
       raw.professionalsummary_points ||
@@ -342,6 +444,8 @@ export function enrichResumeForDownload(details = {}, options = {}) {
         formatFormAddress(details.formAddress || details),
       visa: extras['visa status'] || clean(details.visa),
       dateOfBirth: extras['date of birth'],
+      location: headlineLocation(details, extras),
+      readyToRelocate: readyToRelocate(extras),
     },
   };
 }

@@ -7,6 +7,8 @@ const jobSearchProfileSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     filters: {
       job_title_or: { type: [String], default: [] },
+      /** TheirStack job_seniority_or: junior, mid_level, senior, staff, c_level. */
+      job_seniority_or: { type: [String], default: [] },
       job_country_code_or: { type: [String], default: [] },
       url_domain_or: { type: [String], default: [] },
       /** TheirStack url_domain_not — scrape all sources except these domains. */

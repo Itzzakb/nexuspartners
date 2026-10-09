@@ -6,7 +6,7 @@ const resumeTemplateSchema = new mongoose.Schema(
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
     description: { type: String, default: '' },
     templateContent: { type: String, default: '' },
-    sections: { type: [String], default: ['summary', 'experience', 'education', 'skills'] },
+    sections: { type: [String], default: ['summary', 'skills', 'experience', 'education', 'certifications'] },
     isDefault: { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },

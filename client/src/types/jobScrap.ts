@@ -3,6 +3,8 @@ export type MasterDataCategory = 'job_title' | 'country_code' | 'domain' | 'city
 
 export interface JobSearchFilters {
   job_title_or: string[];
+  /** TheirStack job_seniority_or values: junior, mid_level, senior, staff, c_level. */
+  job_seniority_or: string[];
   job_country_code_or: string[];
   url_domain_or: string[];
   /** TheirStack url_domain_not — exclude these job boards/sources. */

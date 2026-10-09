@@ -554,22 +554,26 @@ function buildExperienceParagraphs(resume) {
     const dates = [clean(exp.start), clean(exp.end)].filter(Boolean).join(' – ');
     const role = clean(exp.position);
 
-    // Company left + dates right on one line (right tab at content edge)
-    if (company || dates) {
+    const place = clean(exp.location);
+    const companyLocation = /^stack:/i.test(place) ? '' : place;
+    const companyLine = [company, companyLocation].filter(Boolean).join(', ');
+
+    // Company (and location) left, dates right, with a gap so the two never run together.
+    if (companyLine || dates) {
       paras.push(
         new Paragraph({
           spacing: { before: 120, after: 40 },
           tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_WIDTH_TWIPS }],
           children: [
             new TextRun({
-              text: company || 'Experience',
+              text: companyLine || 'Experience',
               bold: true,
               size: SIZE_BODY,
               font: FONT,
             }),
             ...(dates
               ? [
-                  new TextRun({ text: '\t', size: SIZE_BODY, font: FONT }),
+                  new TextRun({ text: '    \t', size: SIZE_BODY, font: FONT }),
                   new TextRun({ text: dates, bold: true, size: SIZE_BODY, font: FONT }),
                 ]
               : []),
@@ -703,14 +707,24 @@ async function resolveSections(templateId, companyId) {
     template = await ResumeTemplate.findOne({ companyId, isDefault: true });
   }
 
-  if (!template?.sections?.length) return defaults;
+  if (!template?.sections?.length) return placeSkillsBeforeExperience(defaults);
   const fromTemplate = template.sections
     .map((s) => String(s).toLowerCase().trim())
     .filter((s) => SECTION_BUILDERS[s]);
   if (!fromTemplate.includes('certifications') && SECTION_BUILDERS.certifications) {
     fromTemplate.push('certifications');
   }
-  return fromTemplate.length ? fromTemplate : defaults;
+  return placeSkillsBeforeExperience(fromTemplate.length ? fromTemplate : defaults);
+}
+
+/** Technical Skills always renders above Professional Experience. */
+function placeSkillsBeforeExperience(sections) {
+  const skillsIdx = sections.indexOf('skills');
+  const expIdx = sections.indexOf('experience');
+  if (skillsIdx === -1 || expIdx === -1 || skillsIdx < expIdx) return sections;
+  const next = sections.filter((section) => section !== 'skills');
+  next.splice(next.indexOf('experience'), 0, 'skills');
+  return next;
 }
 
 function packetHeading(text) {
@@ -756,9 +770,11 @@ const PACKET_INTERVIEW_QUESTIONS = [
 ];
 
 async function buildResumeBodyParagraphs(details, options = {}) {
-  const { resume } = resolveResume(details, options);
+  const { resume, contactExtras } = resolveResume(details, options);
   const name = clean(details.name || details.studentname) || 'Candidate';
   const jobTitle = clean(resume.jobtitle) || clean(details.role);
+  const headlineLocation = clean(contactExtras?.location);
+  const showRelocate = contactExtras?.readyToRelocate !== false;
   const sections = await resolveSections(options.templateId, options.companyId);
 
   const children = [
@@ -800,20 +816,51 @@ async function buildResumeBodyParagraphs(details, options = {}) {
     );
   }
 
-  if (jobTitle) {
+  if (jobTitle || headlineLocation || showRelocate) {
+    const headline = [];
+    if (jobTitle) {
+      headline.push(
+        new TextRun({
+          text: jobTitle,
+          bold: true,
+          size: SIZE_HEADING,
+          font: FONT,
+          color: '000000',
+        })
+      );
+    }
+    if (headlineLocation) {
+      if (headline.length) {
+        headline.push(new TextRun({ text: '  |  ', size: SIZE_HEADING, font: FONT }));
+      }
+      headline.push(
+        new TextRun({
+          text: headlineLocation,
+          size: SIZE_HEADING,
+          font: FONT,
+          color: '000000',
+        })
+      );
+    }
+    if (showRelocate) {
+      if (headline.length) {
+        headline.push(new TextRun({ text: '  |  ', size: SIZE_HEADING, font: FONT }));
+      }
+      headline.push(
+        new TextRun({
+          text: 'Ready to Relocate',
+          bold: true,
+          size: SIZE_HEADING,
+          font: FONT,
+          color: '000000',
+        })
+      );
+    }
     children.push(
       new Paragraph({
         alignment: AlignmentType.LEFT,
         spacing: { before: 60, after: 60 },
-        children: [
-          new TextRun({
-            text: jobTitle,
-            bold: true,
-            size: SIZE_HEADING,
-            font: FONT,
-            color: '000000',
-          }),
-        ],
+        children: headline,
       })
     );
   }

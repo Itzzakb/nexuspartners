@@ -49,7 +49,7 @@ export async function createTemplate(req, res) {
       templateContent: templateContent || '',
       sections: Array.isArray(sections) && sections.length
         ? sections
-        : ['summary', 'experience', 'education', 'skills', 'certifications'],
+        : ['summary', 'skills', 'experience', 'education', 'certifications'],
       isDefault: !!isDefault,
       companyId: company._id,
       createdBy: req.user._id,
