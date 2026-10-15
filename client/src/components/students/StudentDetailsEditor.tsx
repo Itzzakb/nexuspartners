@@ -23,6 +23,7 @@ import { downloadStudentDetailsPdf } from '@/lib/studentDetailsPdf';
 import { moveItem, newId } from '@/lib/studentResume';
 import { cn } from '@/lib/utils';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { Toggle } from '@/components/ui/Toggle';
 import { VISA_OPTIONS } from '@/types/resumeForm';
 import type { StudentDetail } from '@/types/phase7';
 
@@ -30,6 +31,38 @@ const DETAIL_VISA_OPTIONS = ['OPT', ...VISA_OPTIONS.filter((v) => v !== 'OPT')];
 
 /** Fields that belong in the Resume tab — keep out of Details suggestions & list. */
 const RESUME_ONLY_FIELDS = new Set(['professional summary', 'technical skills']);
+
+const RELOCATION_DETAIL_KEY = 'Ready to Relocate';
+
+function isRelocationDetailKey(key: string) {
+  return key.trim().toLowerCase() === RELOCATION_DETAIL_KEY.toLowerCase();
+}
+
+function readReadyToRelocate(
+  details: Record<string, unknown>,
+  rows: Array<{ key: string; data: string }>
+): boolean {
+  if (details.readyToRelocate === true) return true;
+  if (details.readyToRelocate === false) return false;
+  const row = rows.find((f) => isRelocationDetailKey(f.key));
+  if (!row) return false;
+  const value = String(row.data || '').trim().toLowerCase();
+  if (!value) return false;
+  if (/^(no|false|n|0|not willing|nope|none)$/.test(value)) return false;
+  return true;
+}
+
+function mergeRelocationIntoFields(fields: DetailField[], readyToRelocate: boolean): DetailField[] {
+  const without = fields.filter((f) => !isRelocationDetailKey(f.key));
+  return [
+    ...without,
+    {
+      id: fields.find((f) => isRelocationDetailKey(f.key))?.id || newId('fld-reloc'),
+      key: RELOCATION_DETAIL_KEY,
+      data: readyToRelocate ? 'Yes' : 'No',
+    },
+  ];
+}
 
 const SUGGESTED_DETAIL_FIELDS: Array<{ key: string; required?: boolean }> = [
   { key: 'Password', required: true },
@@ -153,6 +186,7 @@ export function StudentDetailsEditor({
   const [linkedin, setLinkedin] = useState(String(details.linkedin || ''));
   const [city, setCity] = useState(String(details.city || ''));
   const [state, setState] = useState(String(details.state || ''));
+  const [readyToRelocate, setReadyToRelocate] = useState(false);
   const [notes, setNotes] = useState(initialNotes);
   const [fields, setFields] = useState<DetailField[]>([]);
   const [saving, setSaving] = useState(false);
@@ -238,20 +272,18 @@ export function StudentDetailsEditor({
       : Array.isArray(d.adtionaldetails)
         ? d.adtionaldetails
         : [];
-    setFields(
-      normalizeDetailFields(
-        raw
-          .map((item, i) => {
-            const row = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
-            return {
-              id: newId(`fld-${i}`),
-              key: String(row.key || row.label || ''),
-              data: String(row.data || row.value || ''),
-            };
-          })
-          .filter((row) => row.key && !isResumeOnlyField(row.key))
-      )
-    );
+    const mapped = raw
+      .map((item, i) => {
+        const row = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+        return {
+          id: newId(`fld-${i}`),
+          key: String(row.key || row.label || ''),
+          data: String(row.data || row.value || ''),
+        };
+      })
+      .filter((row) => row.key && !isResumeOnlyField(row.key) && !isRelocationDetailKey(row.key));
+    setReadyToRelocate(readReadyToRelocate(d, mapped));
+    setFields(normalizeDetailFields(mapped));
     setPickerForId(null);
     setPickerQuery('');
   }, [student.phone, student.details, initialNotes]);
@@ -337,6 +369,10 @@ export function StudentDetailsEditor({
     setSaving(true);
     try {
       const visaField = fields.find((f) => f.key.toLowerCase() === 'visa status');
+      const additionalDetails = mergeRelocationIntoFields(
+        fields.filter((f) => f.key.trim() && !isResumeOnlyField(f.key)),
+        readyToRelocate
+      ).map(({ key, data: value }) => ({ key: key.trim(), data: value }));
       const data = await studentApi.update(student.phone, {
         companyId: student.companyId,
         firstName,
@@ -349,9 +385,7 @@ export function StudentDetailsEditor({
         state,
         linkedin,
         visa: visaField?.data || String(details.visa || ''),
-        additionalDetails: fields
-          .filter((f) => f.key.trim() && !isResumeOnlyField(f.key))
-          .map(({ key, data: value }) => ({ key: key.trim(), data: value })),
+        additionalDetails,
         notes,
       });
       onSaved({ student: data.student, notes: data.student.notes || notes });
@@ -378,9 +412,10 @@ export function StudentDetailsEditor({
         state,
         companyLabel: student.companyLabel,
         notes,
-        additionalDetails: fields
-          .filter((f) => f.key.trim() && !isResumeOnlyField(f.key))
-          .map(({ key, data: value }) => ({ key: key.trim(), data: value })),
+        additionalDetails: mergeRelocationIntoFields(
+          fields.filter((f) => f.key.trim() && !isResumeOnlyField(f.key)),
+          readyToRelocate
+        ).map(({ key, data: value }) => ({ key: key.trim(), data: value })),
       });
       onMessage('Student details PDF downloaded');
     } catch (err) {
@@ -479,6 +514,17 @@ export function StudentDetailsEditor({
             <Field label="City" value={city} onChange={setCity} />
             <Field label="State" value={state} onChange={setState} />
           </div>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border px-4 py-3 text-sm text-body">
+            <Toggle
+              className="mt-0.5 shrink-0"
+              checked={readyToRelocate}
+              onChange={setReadyToRelocate}
+              aria-label="Ready to relocate"
+            />
+            <span>
+              Ready to relocate — when enabled, &quot;Ready to Relocate&quot; appears on ATS resume downloads.
+            </span>
+          </label>
         </section>
 
         <section>

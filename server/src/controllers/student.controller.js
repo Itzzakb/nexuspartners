@@ -208,6 +208,7 @@ function buildTicketStudentPrefill(ticket) {
     ['Visa Status', form.visaStatus],
     ['Date of Arrival USA', form.dateOfArrivalUSA],
     ['Vendor call', form.vendorCallTime],
+    ...(form.readyToRelocate ? [['Ready to Relocate', 'Yes']] : []),
     ['Certifications', form.certifications],
     ['Technical Skills', form.technicalSkills],
     ['Relevant Coursework', form.relevantCoursework],

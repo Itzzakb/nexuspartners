@@ -95,6 +95,7 @@ export function emptyResumeFormData() {
     visaStatus: '',
     dateOfArrivalUSA: '',
     vendorCallTime: '',
+    readyToRelocate: false,
     certifications: '',
     preferredRole: '',
     professionalSummary: '',
@@ -221,6 +222,7 @@ export function normalizeResumeFormData(data) {
   base.bachelorsStartDate = String(base.bachelorsStartDate || '');
   base.bachelorsEndDate = String(base.bachelorsEndDate || '');
   base.vendorCallTime = String(base.vendorCallTime || '');
+  base.readyToRelocate = Boolean(base.readyToRelocate);
 
   return base;
 }
@@ -295,6 +297,7 @@ export function formDataToRows(data) {
     ['Visa Status', form.visaStatus],
     ['Date of Arrival (USA)', form.dateOfArrivalUSA],
     ['Vendor call', form.vendorCallTime],
+    ['Ready to Relocate', form.readyToRelocate ? 'Yes' : 'No'],
     ['Certifications', form.certifications],
     ['Preferred Role', form.preferredRole],
     ['Professional Summary', form.professionalSummary],

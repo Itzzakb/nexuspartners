@@ -61,6 +61,8 @@ export interface ResumeFormData {
   dateOfArrivalUSA: string;
   /** Preferred time window for vendor calls, or "Any time" */
   vendorCallTime: string;
+  /** When true, ATS resume header shows "Ready to Relocate". */
+  readyToRelocate: boolean;
   certifications: string;
   preferredRole: string;
   professionalSummary: string;
@@ -260,6 +262,7 @@ export function normalizeResumeFormData(data?: Partial<ResumeFormData> | null): 
   base.bachelorsStartDate = String(base.bachelorsStartDate || '');
   base.bachelorsEndDate = String(base.bachelorsEndDate || '');
   base.vendorCallTime = String(base.vendorCallTime || '');
+  base.readyToRelocate = Boolean(base.readyToRelocate);
 
   return base;
 }
@@ -298,6 +301,7 @@ export function emptyResumeFormData(): ResumeFormData {
     visaStatus: '',
     dateOfArrivalUSA: '',
     vendorCallTime: '',
+    readyToRelocate: false,
     certifications: '',
     preferredRole: '',
     professionalSummary: '',

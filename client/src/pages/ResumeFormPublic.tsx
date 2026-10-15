@@ -204,6 +204,15 @@ export default function ResumeFormPublic() {
               <Field label="ZIP / Postal Code" value={form.zipCode} onChange={(v) => update({ zipCode: v })} />
               <Field label="Country" value={form.country} onChange={(v) => update({ country: v })} />
             </div>
+            <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-lg border border-border px-4 py-3 text-sm text-body">
+              <Toggle
+                className="mt-0.5 shrink-0"
+                checked={form.readyToRelocate}
+                onChange={(checked) => update({ readyToRelocate: checked })}
+                aria-label="Willing to relocate"
+              />
+              <span>I am willing to relocate for the right opportunity (shown on your resume when checked).</span>
+            </label>
           </Section>
 
           <Section title="Experience Level">

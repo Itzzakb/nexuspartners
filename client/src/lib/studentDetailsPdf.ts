@@ -196,7 +196,9 @@ function buildLines(input: StudentDetailsPdfInput): PdfLine[] {
     { kind: 'section', text: 'Contact Information' },
     { kind: 'row', label: 'Email', value: input.email },
     { kind: 'row', label: 'Phone', value: input.phone },
-    { kind: 'row', label: 'LinkedIn', value: input.linkedin },
+    ...(input.linkedin.trim()
+      ? [{ kind: 'row' as const, label: 'LinkedIn', value: input.linkedin }]
+      : []),
     { kind: 'spacer' },
     { kind: 'section', text: 'Location' },
     { kind: 'row', label: 'City', value: input.city },

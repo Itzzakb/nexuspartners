@@ -130,6 +130,7 @@ export function ResumeFormDetails({
             <Field label="Email for Resume" value={form.resumeEmail} />
             <Field label="Email Password" value={form.resumeEmailPassword ? '••••••••' : '—'} />
             <Field label="Personal Phone" value={form.personalPhone} />
+            <Field label="Willing to Relocate" value={form.readyToRelocate ? 'Yes' : 'No'} />
             <Field label="Address" value={address} className="sm:col-span-2 lg:col-span-3" />
           </div>
         </div>

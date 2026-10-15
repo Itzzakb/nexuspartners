@@ -136,12 +136,17 @@ function bullet(text, { boldPrefix = '', boldAll = false } = {}) {
 
 function resolveResume(details, options = {}) {
   const { resume, contactExtras } = enrichResumeForDownload(details, options);
-  // options.jobtitle is the opening being applied to. It is used only for ATS
-  // keyword fitting. The headline under the name stays the student's role.
-  if (resume.jobtitle && Array.isArray(resume.professionalsummary_points)) {
+  const appliedJobTitle = clean(options.jobtitle || options.jobTitle);
+  const summaryRole =
+    appliedJobTitle || clean(resume.jobtitle) || clean(details.role);
+  // Headline under the name stays the student's role; summary uses applied job title when present.
+  if (appliedJobTitle) {
+    resume.appliedJobTitleForSummary = appliedJobTitle;
+  }
+  if (summaryRole && Array.isArray(resume.professionalsummary_points)) {
     resume.professionalsummary_points = lockSummaryOpeningRole(
       resume.professionalsummary_points,
-      resume.jobtitle
+      summaryRole
     );
   }
   return {
@@ -537,11 +542,27 @@ function labeledContactLine(label, value) {
 
 function buildSummaryParagraphs(resume) {
   const points = (resume.professionalsummary_points || []).filter(pointVisible);
-  if (!points.length) return [];
-  return [
-    sectionHeading('Professional Summary'),
-    ...points.map((p) => bullet(clean(p.point))).filter(Boolean),
-  ];
+  const appliedTitle = clean(resume.appliedJobTitleForSummary);
+  if (!points.length && !appliedTitle) return [];
+  const paras = [sectionHeading('Professional Summary')];
+  if (appliedTitle) {
+    paras.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        children: [
+          new TextRun({
+            text: appliedTitle,
+            bold: true,
+            size: SIZE_BODY,
+            font: FONT,
+            color: '000000',
+          }),
+        ],
+      })
+    );
+  }
+  paras.push(...points.map((p) => bullet(clean(p.point))).filter(Boolean));
+  return paras;
 }
 
 function buildExperienceParagraphs(resume) {
@@ -774,7 +795,7 @@ async function buildResumeBodyParagraphs(details, options = {}) {
   const name = clean(details.name || details.studentname) || 'Candidate';
   const jobTitle = clean(resume.jobtitle) || clean(details.role);
   const headlineLocation = clean(contactExtras?.location);
-  const showRelocate = contactExtras?.readyToRelocate !== false;
+  const showRelocate = contactExtras?.readyToRelocate === true;
   const sections = await resolveSections(options.templateId, options.companyId);
 
   const children = [
@@ -814,6 +835,12 @@ async function buildResumeBodyParagraphs(details, options = {}) {
         children: parts,
       })
     );
+  }
+
+  const linkedin = clean(details.linkedin || contactExtras?.linkedin);
+  if (linkedin) {
+    const linkedinLine = labeledContactLine('LinkedIn', linkedin);
+    if (linkedinLine) children.push(linkedinLine);
   }
 
   if (jobTitle || headlineLocation || showRelocate) {

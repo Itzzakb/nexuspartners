@@ -72,6 +72,13 @@ export function StudentViewTab({
   const zip = getAdditionalDetail(details, 'Zip', 'Zip Code', 'zipCode') || '';
   const location = [city, state, zip].filter(Boolean).join(', ') || getAdditionalDetail(details, 'Address');
   const linkedin = String(details.linkedin || '');
+  const readyToRelocate = (() => {
+    const raw = getAdditionalDetail(details, 'Ready to Relocate', 'Willing to Relocate', 'Open to Relocation');
+    const value = raw.trim().toLowerCase();
+    if (!value) return false;
+    if (/^(no|false|n|0|not willing|nope|none)$/.test(value)) return false;
+    return true;
+  })();
 
   const amount =
     formatMoney(details.subscription_amount) ||
@@ -88,6 +95,7 @@ export function StudentViewTab({
   const recruiter = String(details.recruiterId || subscription?.recruiterUsername || '');
 
   const additionalRows: Array<{ label: string; value: string }> = [
+    { label: 'Ready to Relocate', value: readyToRelocate ? 'Yes' : 'No' },
     { label: 'Visa Status', value: getAdditionalDetail(details, 'Visa Status') || String(details.visa || '') },
     {
       label: 'Date of Arrival',

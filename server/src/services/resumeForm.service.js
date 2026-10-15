@@ -141,6 +141,7 @@ export async function syncLinkedStudentFromForm(ticket) {
     ['Address', address],
     ['Visa Status', form.visaStatus],
     ['Date of Arrival USA', form.dateOfArrivalUSA],
+    ...(form.readyToRelocate ? [['Ready to Relocate', 'Yes']] : [['Ready to Relocate', 'No']]),
     ['Certifications', form.certifications],
     ['Technical Skills', form.technicalSkills],
     ['Relevant Coursework', form.relevantCoursework],

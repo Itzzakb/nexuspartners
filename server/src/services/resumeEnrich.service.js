@@ -200,8 +200,11 @@ function headlineLocation(details, extras) {
   return extraValue(extras, 'Location', 'Current Location');
 }
 
-/** Template tag. Hidden only when an additional detail explicitly says no. */
-function readyToRelocate(extras) {
+/** Show "Ready to Relocate" on resume only when student/admin opted in. */
+export function readyToRelocate(extras, details = {}) {
+  if (details.readyToRelocate === true) return true;
+  if (details.readyToRelocate === false) return false;
+
   const value = extraValue(
     extras,
     'Ready to Relocate',
@@ -209,9 +212,11 @@ function readyToRelocate(extras) {
     'Open to Relocation',
     'Relocation'
   ).toLowerCase();
-  if (!value) return true;
-  if (/^(no|false|n|not willing|nope|none)$/.test(value)) return false;
-  return true;
+  if (!value) return false;
+  if (/^(no|false|n|not willing|nope|none|0)$/.test(value)) return false;
+  if (/^(yes|true|y|1|ready|willing|open)$/.test(value)) return true;
+  if (/\b(yes|willing|ready|open)\b/.test(value)) return true;
+  return false;
 }
 
 function normalizeSkills(items, fallbackText = '') {
@@ -445,7 +450,8 @@ export function enrichResumeForDownload(details = {}, options = {}) {
       visa: extras['visa status'] || clean(details.visa),
       dateOfBirth: extras['date of birth'],
       location: headlineLocation(details, extras),
-      readyToRelocate: readyToRelocate(extras),
+      linkedin: clean(details.linkedin),
+      readyToRelocate: readyToRelocate(extras, details),
     },
   };
 }
@@ -529,6 +535,7 @@ export function buildResumeFromFormData(formInput = {}, ticket = {}) {
       formatFormAddress(form) && { key: 'Address', data: formatFormAddress(form) },
       form.visaStatus && { key: 'Visa Status', data: form.visaStatus },
       form.vendorCallTime && { key: 'Vendor call', data: form.vendorCallTime },
+      form.readyToRelocate && { key: 'Ready to Relocate', data: 'Yes' },
       form.certifications && { key: 'Certifications', data: form.certifications },
       form.technicalSkills && { key: 'Technical Skills', data: form.technicalSkills },
       form.relevantCoursework && { key: 'Relevant Coursework', data: form.relevantCoursework },
