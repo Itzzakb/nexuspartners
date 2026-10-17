@@ -2,7 +2,7 @@ import RecruiterResumeLibrary from '../models/RecruiterResumeLibrary.js';
 import StudentJobAction from '../models/StudentJobAction.js';
 import ScrapedJob from '../models/ScrapedJob.js';
 import mongoose from 'mongoose';
-import { buildResumeDownload } from './nexusStudentApi.service.js';
+import { buildResumeDownload, resolveStudentPhoneVariants } from './nexusStudentApi.service.js';
 import { resumeLibraryToJSON } from './recruiterPortal.service.js';
 import { tokenFromDownloadUrl } from '../utils/resumeDownloadToken.js';
 import { packetDownloadFilename } from './resumeDocx.service.js';
@@ -25,9 +25,12 @@ export async function listAppliedResumesForStudent({
   const phone = String(studentPhone || '').trim();
   if (!phone) return { resumes: [], total: 0 };
 
+  const phoneVariants = await resolveStudentPhoneVariants(companyId, phone);
+  if (!phoneVariants.length) return { resumes: [], total: 0 };
+
   const libraryItems = await RecruiterResumeLibrary.find({
     companyId,
-    studentPhone: phone,
+    studentPhone: { $in: phoneVariants },
   })
     .sort({ createdAt: -1 })
     .lean();
@@ -45,7 +48,7 @@ export async function listAppliedResumesForStudent({
   // Include applied actions that have a download URL but no library row yet.
   const actions = await StudentJobAction.find({
     companyId,
-    studentPhone: phone,
+    studentPhone: { $in: phoneVariants },
     status: { $nin: ['dropped', 'saved'] },
   })
     .sort({ appliedAt: -1, createdAt: -1 })
@@ -147,32 +150,59 @@ export async function listAppliedResumesForStudent({
   return { resumes, total: resumes.length };
 }
 
+export async function resolveAppliedResumeCompanyId(resumeId, fallbackCompanyId) {
+  if (!mongoose.isValidObjectId(resumeId)) {
+    return { companyId: fallbackCompanyId, found: false };
+  }
+  const library = await RecruiterResumeLibrary.findById(resumeId).select('companyId').lean();
+  if (library?.companyId) {
+    return { companyId: library.companyId, found: true };
+  }
+  const action = await StudentJobAction.findById(resumeId).select('companyId').lean();
+  if (action?.companyId) {
+    return { companyId: action.companyId, found: true };
+  }
+  return { companyId: fallbackCompanyId, found: false };
+}
+
 export async function downloadAppliedResumeById({
   companyId,
   resumeId,
   publicBaseUrl,
 }) {
-  let item = mongoose.isValidObjectId(resumeId)
-    ? await RecruiterResumeLibrary.findOne({
-        _id: resumeId,
-        companyId,
-      })
-    : null;
+  if (!mongoose.isValidObjectId(resumeId)) {
+    const err = new Error('Resume not found');
+    err.status = 404;
+    throw err;
+  }
+
+  let item = await RecruiterResumeLibrary.findOne({ _id: resumeId, companyId });
   let action = null;
 
   if (!item) {
-    action = mongoose.isValidObjectId(resumeId)
-      ? await StudentJobAction.findOne({ _id: resumeId, companyId })
-      : null;
-    if (!action) {
+    action = await StudentJobAction.findOne({ _id: resumeId, companyId });
+  }
+
+  if (!item && !action) {
+    item = await RecruiterResumeLibrary.findById(resumeId);
+    if (!item) {
+      action = await StudentJobAction.findById(resumeId);
+    }
+    const recordCompanyId = item?.companyId || action?.companyId;
+    if (recordCompanyId) {
+      companyId = recordCompanyId;
+    } else {
       const err = new Error('Resume not found');
       err.status = 404;
       throw err;
     }
+  }
 
+  if (!item && action) {
+    const phoneVariants = await resolveStudentPhoneVariants(companyId, action.studentPhone);
     item = await RecruiterResumeLibrary.findOne({
       companyId,
-      studentPhone: action.studentPhone,
+      studentPhone: phoneVariants.length ? { $in: phoneVariants } : action.studentPhone,
       scrapedJobId: action.scrapedJobId || null,
       recruiterUsername: action.recruiterUsername || '',
     });

@@ -120,43 +120,50 @@ export default function SearchResume() {
 
   const searchResumes = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const mobile = phone.trim();
+    let mobile = phone.trim();
     if (!mobile) {
       toast.error('Select a student or enter a mobile number');
       return;
     }
     setSearching(true);
     try {
-      // Resolve student card if only phone was typed
+      let searchCompanyId = selected?.companyId || effectiveCompanyId;
+
+      // Resolve student card if only phone was typed (includes suspended — not in all pickers)
       if (!selected || selected.phone !== mobile) {
         const match = students.find((s) => s.phone === mobile || s.phone.replace(/\D/g, '') === mobile.replace(/\D/g, ''));
-        if (match) setSelected(match);
-        else {
+        if (match) {
+          setSelected(match);
+          searchCompanyId = match.companyId || searchCompanyId;
+          mobile = match.phone;
+        } else {
           try {
             const data = await studentApi.get(mobile, effectiveCompanyId);
+            const details = data.student.details as Record<string, unknown>;
             setSelected({
               phone: data.student.phone,
-              name: String(
-                (data.student.details as Record<string, unknown>)?.name ||
-                  (data.student.details as Record<string, unknown>)?.studentname ||
-                  'Student'
-              ),
-              email: String((data.student.details as Record<string, unknown>)?.email || ''),
+              name: String(details?.name || details?.studentname || 'Student'),
+              email: String(details?.email || ''),
               companyId: data.student.companyId,
               companyLabel: data.student.companyLabel,
               paymentCount: 0,
               hasActiveSubscription: false,
-              status: 'active',
+              status: String(details?.status || 'active'),
             });
+            searchCompanyId = data.student.companyId;
+            mobile = data.student.phone;
           } catch {
             /* keep phone-only search */
           }
         }
+      } else {
+        searchCompanyId = selected.companyId || searchCompanyId;
+        mobile = selected.phone;
       }
 
       const data = await resumeParseApi.listApplied({
         phone: mobile,
-        companyId: effectiveCompanyId,
+        companyId: searchCompanyId,
         company: companyFilter.trim() || undefined,
         jobTitle: jobTitleFilter.trim() || undefined,
         q: descriptionFilter.trim() || undefined,
@@ -202,7 +209,10 @@ export default function SearchResume() {
     setDownloadingId(row.id);
     try {
       const filename = packetFilename(row);
-      const data = await resumeParseApi.downloadApplied(row.id, effectiveCompanyId);
+      const data = await resumeParseApi.downloadApplied(
+        row.id,
+        selected?.companyId || effectiveCompanyId
+      );
       if (!data.downloadUrl) {
         toast.error('No resume file available for this application yet');
         return;

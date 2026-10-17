@@ -8,6 +8,37 @@ export function normalizePhone(phone = '') {
   return String(phone).replace(/[^\d+]/g, '').trim();
 }
 
+/** All phone strings that may appear on job actions / library rows for this student. */
+export async function resolveStudentPhoneVariants(companyId, phone) {
+  const trimmed = String(phone || '').trim();
+  if (!trimmed) return [];
+
+  const normalized = normalizePhone(trimmed);
+  const variants = new Set([trimmed, normalized].filter(Boolean));
+
+  const query = {
+    $or: [{ phone: trimmed }, { phoneNormalized: normalized }],
+  };
+  if (companyId) query.companyId = companyId;
+
+  const student = await Student.findOne(query).select('phone phoneNormalized');
+  if (student?.phone) variants.add(student.phone);
+  if (student?.phoneNormalized) variants.add(student.phoneNormalized);
+
+  return [...variants].filter(Boolean);
+}
+
+export async function findStudentByPhone(phone, companyId = null) {
+  const trimmed = String(phone || '').trim();
+  if (!trimmed) return null;
+  const normalized = normalizePhone(trimmed);
+  const query = {
+    $or: [{ phone: trimmed }, { phoneNormalized: normalized }],
+  };
+  if (companyId) query.companyId = companyId;
+  return Student.findOne(query);
+}
+
 export function resolveApiCompanyName(company) {
   if (company.apiCompanyName) return company.apiCompanyName;
   if (company.name === 'nexuspartners.com') return 'nexuspartners';
@@ -79,14 +110,16 @@ async function resolveCompanyByNameOrId(companyNameOrId) {
   });
 }
 
-export async function fetchStudents(companyName) {
+export async function fetchStudents(companyName, { includeSuspended = false } = {}) {
   const company = await resolveCompanyByNameOrId(companyName);
   if (!company) return [];
 
-  const students = await Student.find({
-    companyId: company._id,
-    status: { $ne: 'suspended' },
-  }).sort({ createdAt: -1 });
+  const query = { companyId: company._id };
+  if (!includeSuspended) {
+    query.status = { $ne: 'suspended' };
+  }
+
+  const students = await Student.find(query).sort({ createdAt: -1 });
 
   return students.map(toExternalStudentShape);
 }

@@ -63,7 +63,7 @@ function normalizeStudent(s, companyId) {
 export async function listStudents(req, res) {
   try {
     const company = await resolveCompany(req.user, req.query.companyId);
-    const students = await fetchStudents(company._id.toString());
+    const students = await fetchStudents(company._id.toString(), { includeSuspended: true });
 
     const q = (req.query.q || '').toLowerCase();
     const normalized = students.map((s) => normalizeStudent(s, company._id.toString()));

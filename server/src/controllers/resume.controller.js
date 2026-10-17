@@ -1,6 +1,10 @@
 import fs from 'fs';
 import multer from 'multer';
-import { buildResumeDownload, updateStudentResume } from '../services/nexusStudentApi.service.js';
+import {
+  buildResumeDownload,
+  updateStudentResume,
+  findStudentByPhone,
+} from '../services/nexusStudentApi.service.js';
 import { parseResumeText } from '../services/gemini.service.js';
 import { extractTextFromResumeFile } from '../services/resumeTextExtract.service.js';
 import { completeParsedResumeFromText } from '../services/resumeParseComplete.service.js';
@@ -9,6 +13,7 @@ import { resolveResumeDownload } from '../services/resumeDownload.service.js';
 import {
   listAppliedResumesForStudent,
   downloadAppliedResumeById,
+  resolveAppliedResumeCompanyId,
 } from '../services/adminAppliedResume.service.js';
 
 const upload = multer({
@@ -46,13 +51,29 @@ export async function buildResume(req, res) {
 /** Admin Search Resume: list job-application resumes for a student. */
 export async function listAppliedResumes(req, res) {
   try {
-    const phone = String(req.query.phone || '').trim();
+    let phone = String(req.query.phone || '').trim();
     if (!phone) return res.status(400).json({ error: 'phone is required' });
 
-    const companyId =
-      req.user.isPlatformAdmin && req.query.companyId
-        ? req.query.companyId
-        : req.user.companyId._id;
+    const userCompanyId = req.user.companyId._id;
+    const queryCompanyId =
+      req.user.isPlatformAdmin && req.query.companyId ? req.query.companyId : null;
+
+    let companyId = queryCompanyId || userCompanyId;
+
+    let student = await findStudentByPhone(phone, queryCompanyId || null);
+    if (!student && req.user.isPlatformAdmin && queryCompanyId) {
+      student = await findStudentByPhone(phone);
+    }
+    if (student) {
+      if (
+        !req.user.isPlatformAdmin &&
+        student.companyId.toString() !== userCompanyId.toString()
+      ) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      companyId = student.companyId;
+      phone = student.phone || phone;
+    }
 
     const result = await listAppliedResumesForStudent({
       companyId,
@@ -70,10 +91,24 @@ export async function listAppliedResumes(req, res) {
 /** Admin Search Resume: download a saved application resume (rebuilds if needed). */
 export async function downloadAppliedResume(req, res) {
   try {
-    const companyId =
+    const userCompanyId = req.user.companyId._id;
+    const requestedCompanyId =
       req.user.isPlatformAdmin && req.body.companyId
         ? req.body.companyId
-        : req.user.companyId._id;
+        : userCompanyId;
+
+    const { companyId: recordCompanyId } = await resolveAppliedResumeCompanyId(
+      req.params.id,
+      requestedCompanyId
+    );
+    const companyId = recordCompanyId || requestedCompanyId;
+
+    if (
+      !req.user.isPlatformAdmin &&
+      companyId.toString() !== userCompanyId.toString()
+    ) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     const result = await downloadAppliedResumeById({
       companyId,
